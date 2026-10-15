@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "everyday"
+version = "1.0.0"
+description = "EveryDay - 每日计划软件（Windows 桌面应用）"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "EveryDay Contributors" }]
+keywords = ["task", "todo", "planner", "calendar", "windows", "pyside6"]
+# 只依赖 Essentials：EveryDay 不使用 WebEngine / Addons / Pdf，
+# 元包 PySide6 会多下载约 130MB 的无用内容。
+dependencies = ["PySide6-Essentials>=6.6,<7.0"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.6"]
+
+[project.scripts]
+everyday = "everyday.app:main"
+
+[project.gui-scripts]
+everyday-gui = "everyday.app:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-q"
+filterwarnings = ["error::DeprecationWarning"]
+
+[tool.coverage.run]
+source = ["src/everyday"]
+omit = ["src/everyday/ui/*", "src/everyday/__main__.py"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = ["E501"]

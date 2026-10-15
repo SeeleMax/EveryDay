@@ -1,0 +1,20 @@
+# 统一换行符处理，避免 Windows 上因 autocrlf 设置不同产生虚假 diff
+* text=auto eol=lf
+
+# Windows 专用脚本保持 CRLF，否则 cmd/PowerShell 可能出错
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 二进制资源
+*.png binary
+*.jpg binary
+*.ico binary
+*.exe binary
+*.dll binary
+*.db binary
+*.zip binary
+*.7z binary
+
+# 生成物不参与 diff 统计
+CHANGELOG.md merge=union

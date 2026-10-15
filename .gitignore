@@ -1,28 +1,70 @@
-# Python
+# ---- Python ----
 __pycache__/
 *.py[cod]
 *$py.class
 *.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+pip-wheel-metadata/
 
-# Virtual environments
+# ---- 虚拟环境 ----
 .venv/
 venv/
 env/
+ENV/
+.python-version
 
-# Tooling caches
+# ---- 测试与覆盖率 ----
 .pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.tox/
+.nox/
+
+# ---- 类型检查与格式化 ----
 .mypy_cache/
 .ruff_cache/
-.ipynb_checkpoints/
+.dmypy.json
 
-# IDE
+# ---- PyCharm / JetBrains ----
 .idea/
+*.iml
+*.iws
+*.ipr
+out/
+
+# ---- VS Code ----
 .vscode/
 
-# Secrets - never commit these
-.env
-*.pem
-*.key
+# ---- 打包产物 ----
+*.spec
+release/
+*.zip
+*.exe
 
-# Local data
+# ---- 运行期数据（绝不入库）----
+# 数据库、备份、日志都写在 %LOCALAPPDATA%\EveryDay 下，
+# 此处仅防御性地忽略误放进仓库的副本。
+*.db
+*.db-wal
+*.db-shm
 *.log
+logs/
+backups/
+data/
+
+# 本地配置（含个人日历订阅地址等隐私信息）
+config/appsettings.json
+appsettings.json
+
+# ---- 操作系统 ----
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store

@@ -1,0 +1,8 @@
+-r requirements.txt
+
+# 测试
+pytest>=8.0
+pytest-cov>=5.0
+
+# 代码质量（可选）
+ruff>=0.6

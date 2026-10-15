@@ -1,0 +1,15 @@
+# EveryDay 运行期依赖
+#
+# 设计原则：业务逻辑层（models / db / services）只使用 Python 标准库，
+# 因此核心逻辑可以在没有任何第三方包的环境下被导入和测试。
+# 唯一的外部依赖是 UI 层需要的 Qt6 绑定。
+
+# 用 PySide6-Essentials 而不是 PySide6 元包。
+# 元包会连带拉入 PySide6-WebEngine（131.7 MB）、PySide6-Addons、PySide6-Pdf，
+# 而 EveryDay 只用到 QtCore / QtGui / QtWidgets —— 也就是 Essentials 的内容。
+# 元包安装体积 200MB+，Essentials 约 75MB，且导入的是同一个 `PySide6` 包名，
+# 代码无需任何改动。
+PySide6-Essentials>=6.6,<7.0
+
+# ---- 开发/测试依赖（可选，见 requirements-dev.txt）----
+# 逻辑层测试使用标准库 unittest，不强制需要 pytest。
