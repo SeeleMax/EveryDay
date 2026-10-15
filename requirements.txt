@@ -1,0 +1,10 @@
+# EveryDay 运行期依赖
+#
+# 设计原则：业务逻辑层（models / db / services）只使用 Python 标准库，
+# 因此核心逻辑可以在没有任何第三方包的环境下被导入和测试。
+# 唯一的外部依赖是 UI 层需要的 Qt6 绑定。
+
+PySide6>=6.6,<7.0
+
+# ---- 开发/测试依赖（可选，见 requirements-dev.txt）----
+# 逻辑层测试使用标准库 unittest，不强制需要 pytest。
