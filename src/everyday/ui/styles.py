@@ -1,6 +1,14 @@
 """界面样式（QSS）。
 
 集中在这里，避免在窗口代码里散落颜色与字号字面量。
+
+**字号一律用 ``pt`` 而不是 ``px``**，原因有两条：
+
+1. ``pt`` 会随系统 DPI 与用户的「缩放与布局」设置正确放大，``px`` 是设备无关
+   像素但不会跟随用户的字体缩放偏好，辅助功能上更差。
+2. 用 ``px`` 时 Qt 只设置字体的**像素尺寸**，点数字号保持 ``-1``（未指定）；
+   之后任何对字体调用 ``setPointSize`` 的代码路径都会让 Qt 打印
+   ``QFont::setPointSize: Point size <= 0 (-1), must be greater than 0``。
 """
 
 from __future__ import annotations
@@ -23,7 +31,7 @@ FLOAT_BORDER = "rgba(0, 0, 0, 30)"
 MAIN_STYLE = f"""
 QWidget {{
     font-family: "Microsoft YaHei UI", "Segoe UI", sans-serif;
-    font-size: 13px;
+    font-size: 10pt;
     color: {TEXT_PRIMARY};
 }}
 QMainWindow, QDialog {{
@@ -89,13 +97,13 @@ QDateEdit:focus, QTimeEdit:focus, QSpinBox:focus {{
     border-color: {PRIMARY};
 }}
 QLabel#sectionTitle {{
-    font-size: 14px;
+    font-size: 10.5pt;
     font-weight: 600;
     color: {TEXT_PRIMARY};
 }}
 QLabel#hint {{
     color: {TEXT_SECONDARY};
-    font-size: 12px;
+    font-size: 9pt;
 }}
 QLabel#eventTime {{
     color: {PRIMARY};
@@ -140,16 +148,16 @@ FLOAT_STYLE = f"""
 }}
 #floatHeader {{
     color: {TEXT_PRIMARY};
-    font-size: 13px;
+    font-size: 10pt;
     font-weight: 600;
 }}
 #floatProgress {{
     color: {TEXT_SECONDARY};
-    font-size: 12px;
+    font-size: 9pt;
 }}
 #floatFooter {{
     color: {TEXT_SECONDARY};
-    font-size: 11px;
+    font-size: 8pt;
 }}
 QListWidget#floatList {{
     background: transparent;
@@ -163,7 +171,7 @@ QPushButton#floatClose {{
     background: transparent;
     border: none;
     color: {TEXT_SECONDARY};
-    font-size: 14px;
+    font-size: 10.5pt;
     padding: 0px 4px;
 }}
 QPushButton#floatClose:hover {{

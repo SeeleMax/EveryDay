@@ -5,10 +5,9 @@ from __future__ import annotations
 import unittest
 from datetime import date, datetime, time
 
-from tests.base import DatabaseTestCase  # noqa: F401  (确保 src 已入 path)
-
 from everyday.models.preset import PresetTemplate
 from everyday.models.task import MAX_TITLE_LENGTH, TaskItem, TaskType
+from tests.base import DatabaseTestCase  # noqa: F401  (确保 src 已入 path)
 
 # 2026-10-05 是星期一
 MONDAY = date(2026, 10, 5)

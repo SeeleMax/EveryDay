@@ -17,9 +17,10 @@ from __future__ import annotations
 import logging
 import sqlite3
 import threading
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Iterable, Iterator, Mapping, Sequence
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -156,7 +157,7 @@ class Database:
     # ------------------------------------------------------------------
     # 上下文管理器支持（``with Database(...) as db:``）
     # ------------------------------------------------------------------
-    def __enter__(self) -> "Database":
+    def __enter__(self) -> Database:
         self.connect()
         return self
 

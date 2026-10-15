@@ -8,10 +8,9 @@ from __future__ import annotations
 import unittest
 from datetime import date, time
 
-from tests.base import DatabaseTestCase
-
 from everyday.models.task import TaskItem, TaskType
 from everyday.services.task_service import TaskService
+from tests.base import DatabaseTestCase
 
 MONDAY = date(2026, 10, 5)      # 星期一
 TUESDAY = date(2026, 10, 6)

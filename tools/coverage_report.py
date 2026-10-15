@@ -94,7 +94,6 @@ def main() -> int:
     args = parser.parse_args()
 
     targets = collect_targets(args.include_ui)
-    target_set = {str(p.resolve()) for p in targets}
 
     print(f"正在以 trace 模式运行全部单元测试（{len(targets)} 个文件参与统计）…", flush=True)
     tracer = trace.Trace(count=1, trace=0, ignoredirs=[sys.prefix, sys.exec_prefix])

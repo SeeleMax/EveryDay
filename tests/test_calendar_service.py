@@ -7,10 +7,9 @@ import unittest
 from datetime import date, datetime
 from pathlib import Path
 
-from tests.base import DatabaseTestCase  # noqa: F401  (确保 src 已入 path)
-
 from everyday.services.calendar_service import CalendarService, read_source
 from everyday.services.ics_parser import CalendarEvent
+from tests.base import DatabaseTestCase  # noqa: F401  (确保 src 已入 path)
 
 WEEK_ICS = """BEGIN:VCALENDAR
 VERSION:2.0

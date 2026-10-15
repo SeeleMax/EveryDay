@@ -16,7 +16,7 @@ import logging
 import sys
 import threading
 from types import TracebackType
-from typing import Callable, Optional
+from typing import Callable
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ _MAX_POPUPS_PER_FINGERPRINT = 1
 
 
 def install(
-    notifier: Optional[Notifier] = None,
+    notifier: Notifier | None = None,
     *,
     install_thread_hook: bool = True,
 ) -> None:
@@ -50,7 +50,7 @@ def install(
     def _excepthook(
         exc_type: type[BaseException],
         exc_value: BaseException,
-        exc_tb: Optional[TracebackType],
+        exc_tb: TracebackType | None,
     ) -> None:
         # Ctrl+C 交回默认处理，避免打断用户主动中断
         if issubclass(exc_type, KeyboardInterrupt):
@@ -61,7 +61,7 @@ def install(
     sys.excepthook = _excepthook
 
     if install_thread_hook and hasattr(threading, "excepthook"):
-        def _thread_hook(args: "threading.ExceptHookArgs") -> None:
+        def _thread_hook(args: threading.ExceptHookArgs) -> None:
             if issubclass(args.exc_type, SystemExit):
                 return
             thread_name = args.thread.name if args.thread else "unknown"
@@ -84,7 +84,7 @@ def report_exception(
     exc: BaseException,
     *,
     source: str = "unknown",
-    notifier: Optional[Notifier] = None,
+    notifier: Notifier | None = None,
     show_dialog: bool = True,
 ) -> None:
     """记录一个异常并按需弹出友好提示。
@@ -125,7 +125,7 @@ def reset_popup_state() -> None:
     _seen_fingerprints.clear()
 
 
-def guard(notifier: Optional[Notifier] = None, source: str = "guard"):
+def guard(notifier: Notifier | None = None, source: str = "guard"):
     """装饰器：把函数体内的任何异常转为「记日志 + 提示」，不向上传播。
 
     适用于定时器回调、托盘菜单回调这类「抛异常就会静默失效」的入口。

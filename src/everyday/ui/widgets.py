@@ -8,9 +8,10 @@ from __future__ import annotations
 
 from datetime import date
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
+    QApplication,
     QCheckBox,
     QHBoxLayout,
     QLabel,
@@ -21,6 +22,27 @@ from PySide6.QtWidgets import (
 
 from everyday.models.task import TaskItem
 from everyday.ui import styles
+
+#: 字体点数兜底值。某些环境下应用字体没有显式点数（Qt 返回 -1），
+#: 直接拿它去 setFont 会让 Qt 打印
+#: ``QFont::setPointSize: Point size <= 0 (-1), must be greater than 0``
+_FALLBACK_POINT_SIZE = 10
+
+
+def strikeout_font(base: QFont, strike: bool) -> QFont:
+    """返回「带/不带删除线」的字体副本，并保证点数有效。
+
+    为什么要保证点数：``Painter.font()`` 或控件字体在应用未显式设置字号时，
+    ``pointSize()`` 会是 ``-1``（表示「尚未指定」）。把这个字体原样设回去，
+    Qt 会打印 ``setPointSize: Point size <= 0`` 警告——本机就在
+    ``PySide6`` 未随包分发字体目录的 venv 里复现过。
+    """
+    font = QFont(base)
+    if font.pointSize() <= 0:
+        fallback = QApplication.font().pointSize()
+        font.setPointSize(fallback if fallback > 0 else _FALLBACK_POINT_SIZE)
+    font.setStrikeOut(strike)
+    return font
 
 
 class TaskRow(QWidget):
@@ -91,9 +113,7 @@ class TaskRow(QWidget):
     def apply_state(self, task: TaskItem, day: date) -> None:
         """按任务当前状态刷新视觉（删除线、超期警示）。"""
         self._task = task
-        font = QFont(self.title_label.font())
-        font.setStrikeOut(task.is_completed)
-        self.title_label.setFont(font)
+        self.title_label.setFont(strikeout_font(self.title_label.font(), task.is_completed))
 
         if task.is_overdue_on(day):
             self.title_label.setStyleSheet(f"color: {styles.OVERDUE};")

@@ -28,9 +28,9 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import date, datetime, time, timedelta
-from typing import Iterable, Iterator, Mapping, Sequence
 
 logger = logging.getLogger(__name__)
 

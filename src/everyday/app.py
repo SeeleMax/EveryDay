@@ -380,6 +380,47 @@ def _make_application_class():
     return EveryDayApplication
 
 
+def _show_native_error_dialog(title: str, message: str) -> None:
+    """用 Windows 原生消息框提示致命错误。
+
+    在 ``pythonw.exe`` 下没有控制台，这是唯一能让用户看到信息的办法。
+    刻意不依赖 Qt（此时还没有 QApplication），并且**吞掉所有失败**——
+    这一层只做「尽力而为」的提示。注意某些 Python 发行版的 ``_ctypes``
+    可能不可用（本机就遇到过一个 venv 里 ``import ctypes`` 直接报
+    `DLL load failed while importing _ctypes`），此时 stderr 已经有信息了。
+    """
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+
+        # MB_ICONERROR = 0x10
+        ctypes.windll.user32.MessageBoxW(None, message, title, 0x10)
+    except Exception:  # noqa: BLE001 - 提示失败不影响主流程
+        logger.debug("原生消息框不可用，仅输出到 stderr", exc_info=True)
+
+
+def _report_fatal_startup_error(target: Path, exc: OSError) -> None:
+    """启动早期无法建立数据目录时，给出人能看懂的提示。
+
+    为什么需要单独处理：这一步发生在日志初始化**之前**，因此拿不到日志文件。
+    如果只用 ``print``，那么用 ``pythonw.exe`` 启动（开机自启、双击快捷方式）
+    时用户**什么都看不到**——程序就这样无声无息地没了。
+    """
+    message = (
+        f"EveryDay 无法建立数据目录：\n\n{target}\n\n"
+        f"系统报告的错误：{exc}\n\n"
+        "可能的原因：\n"
+        "  · 该目录被安全软件或组策略禁止写入\n"
+        "  · 该目录正处于被删除的中间状态（稍等片刻后重试）\n"
+        "  · 磁盘已满或处于只读状态\n\n"
+        "解决办法：用 --data-dir 指定另一个可写目录，例如\n"
+        f'  python main.py --data-dir "%USERPROFILE%\\EveryDay"'
+    )
+    print(message, file=sys.stderr, flush=True)
+    _show_native_error_dialog(f"{APP_NAME} 启动失败", message)
+
+
 def main(argv: list[str] | None = None) -> int:
     """程序入口。"""
     arguments = list(sys.argv if argv is None else argv)
@@ -389,7 +430,15 @@ def main(argv: list[str] | None = None) -> int:
     # 早期实现直接调用 setup_logging() 走默认目录，结果即使传了 --data-dir，
     # 仍然会在 %LOCALAPPDATA%\EveryDay\logs 下创建（并长期持有）一个日志文件，
     # 破坏 --data-dir 的隔离语义，也让便携/调试场景互相干扰。
-    early_root = paths.data_dir(options.data_dir)
+    #
+    # 这里必须显式捕获 OSError：数据目录建不出来时，与其抛一个裸 traceback
+    # （pythonw 启动下用户看不到任何东西），不如给出可操作的提示。
+    try:
+        early_root = paths.data_dir(options.data_dir)
+    except OSError as exc:
+        _report_fatal_startup_error(paths.resolve_data_dir(options.data_dir), exc)
+        return 2
+
     setup_logging(
         options.log_level or "INFO", log_directory=paths.logs_dir(early_root)
     )

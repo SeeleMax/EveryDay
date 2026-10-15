@@ -72,8 +72,8 @@ class ApplicationStartupTest(unittest.TestCase):
     # ------------------------------------------------------------------
     def _run_application(self, *, minimized: bool = False) -> int:
         """启动应用，到点后走真实退出路径，返回进程退出码。"""
-        from everyday.app import Application, main
         from everyday import exceptions
+        from everyday.app import Application, main
 
         holder: dict[str, object] = {}
         existing_app = QApplication.instance()
@@ -263,6 +263,102 @@ class ApplicationStartupTest(unittest.TestCase):
         self.assertEqual(paths.data_dir(), self.data_dir)
         self.assertEqual(paths.logs_dir(), self.data_dir / "logs")
         self.assertEqual(paths.backups_dir(), self.data_dir / "backups")
+
+
+class DataDirectoryResolutionTest(unittest.TestCase):
+    """数据目录解析与失败提示。"""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def test_resolve_data_dir_has_no_side_effects(self):
+        """``resolve_data_dir`` 只算路径，不建目录。
+
+        这样调用方才能在创建失败时拿到目标路径去给出可读提示。
+        """
+        from everyday import paths
+
+        target = Path(self._tmp.name) / "not-created" / "deeper"
+        self.assertEqual(paths.resolve_data_dir(str(target)), target)
+        self.assertFalse(target.exists(), "resolve_data_dir 不应创建任何东西")
+
+    def test_data_dir_creates_directory(self):
+        from everyday import paths
+
+        target = Path(self._tmp.name) / "a" / "b" / "c"
+        created = paths.data_dir(str(target))
+        self.assertTrue(created.is_dir())
+
+    def test_data_dir_raises_oserror_when_parent_is_a_file(self):
+        from everyday import paths
+
+        blocker = Path(self._tmp.name) / "blocker"
+        blocker.write_text("我是文件，不是目录", encoding="utf-8")
+        with self.assertRaises(OSError):
+            paths.data_dir(str(blocker / "sub"))
+
+    def test_unwritable_data_dir_reports_clear_error_and_exits_2(self):
+        """数据目录建不出来时必须给出可读提示并以 2 退出，而不是抛裸异常。
+
+        回归背景：这一步发生在日志初始化之前，因此拿不到日志；若直接抛
+        ``PermissionError``，用 ``pythonw.exe`` 启动（双击、开机自启）时
+        用户什么都看不到，程序就无声无息地没了。
+        """
+        from everyday import app as app_module
+
+        blocker = Path(self._tmp.name) / "blocker"
+        blocker.write_text("我是文件，不是目录", encoding="utf-8")
+        bad_dir = blocker / "sub"
+
+        captured: list[tuple[Path, OSError]] = []
+        dialogs: list[tuple[str, str]] = []
+
+        original_report = app_module._report_fatal_startup_error
+        original_dialog = app_module._show_native_error_dialog
+        app_module._report_fatal_startup_error = lambda target, exc: captured.append(
+            (target, exc)
+        )
+        # 屏蔽原生消息框：否则测试会被模态框阻塞（且本机曾出现 _ctypes 不可用）
+        app_module._show_native_error_dialog = lambda title, message: dialogs.append(
+            (title, message)
+        )
+        try:
+            exit_code = app_module.main(["EveryDay", "--data-dir", str(bad_dir)])
+        finally:
+            app_module._report_fatal_startup_error = original_report
+            app_module._show_native_error_dialog = original_dialog
+
+        self.assertEqual(exit_code, 2)
+        self.assertEqual(len(captured), 1, "必须调用一次失败提示")
+        self.assertEqual(captured[0][0], bad_dir, "提示里必须给出目标路径")
+        self.assertIsInstance(captured[0][1], OSError)
+
+    def test_native_error_dialog_swallows_ctypes_failure(self):
+        """原生提示框必须「尽力而为」：ctypes 不可用时也不能抛出去。
+
+        本机真的遇到过某个 venv 里 ``import ctypes`` 直接报
+        ``DLL load failed while importing _ctypes``，因此这条不是假想。
+        """
+
+        from everyday import app as app_module
+
+        class BrokenCtypes:
+            def __getattr__(self, name: str):
+                raise RuntimeError("模拟 _ctypes 不可用")
+
+        original = sys.modules.get("ctypes")
+        sys.modules["ctypes"] = BrokenCtypes()  # type: ignore[assignment]
+        try:
+            # 不应抛出任何异常
+            app_module._show_native_error_dialog("测试标题", "测试内容")
+        finally:
+            if original is None:
+                sys.modules.pop("ctypes", None)
+            else:
+                sys.modules["ctypes"] = original
 
 
 if __name__ == "__main__":

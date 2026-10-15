@@ -5,11 +5,10 @@ from __future__ import annotations
 import unittest
 from datetime import date, time
 
-from tests.base import DatabaseTestCase
-
 from everyday.models.preset import PresetTemplate
 from everyday.models.task import TaskItem, TaskType
 from everyday.services.preset_service import PresetService
+from tests.base import DatabaseTestCase
 
 MONDAY = date(2026, 10, 5)
 

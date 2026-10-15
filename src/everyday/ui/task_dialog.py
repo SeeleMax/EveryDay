@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import date, time
 
-from PySide6.QtCore import QDate, QTime, Qt
+from PySide6.QtCore import QDate, Qt, QTime
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,

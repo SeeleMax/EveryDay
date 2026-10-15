@@ -19,7 +19,6 @@ import pkgutil
 import tempfile
 import unittest
 from datetime import date, time
-from pathlib import Path
 
 from tests.base import DatabaseTestCase  # noqa: F401  (确保 src 已入 path)
 
@@ -255,8 +254,9 @@ class MainWindowTest(UiBaseTestCase):
             window.deleteLater()
 
     def test_calendar_sidebar_shows_events(self):
-        from everyday.services.ics_parser import CalendarEvent
         from datetime import datetime
+
+        from everyday.services.ics_parser import CalendarEvent
 
         today = self.context.today()
         self.calendar_service.replace_events(
@@ -455,8 +455,8 @@ class DialogTest(UiBaseTestCase):
             dialog.deleteLater()
 
     def test_task_dialog_type_change_updates_date_label(self):
-        from everyday.ui.task_dialog import TaskDialog
         from everyday.models.task import TaskType as TT
+        from everyday.ui.task_dialog import TaskDialog
 
         dialog = TaskDialog(None, default_date=MONDAY)
         try:
@@ -715,6 +715,46 @@ class ShutdownBehaviourTest(UiBaseTestCase):
         finally:
             # 事件循环此时并未运行，quit() 不会真的结束任何东西
             pass
+
+
+class StrikeoutFontTest(UiBaseTestCase):
+    """删除线字体的健壮性（回归 Qt 的 ``setPointSize`` 警告）。"""
+
+    def test_font_keeps_valid_point_size(self):
+        from PySide6.QtGui import QFont
+
+        from everyday.ui.widgets import strikeout_font
+
+        # 模拟「尚未指定字号」的字体：pointSize() 为 -1
+        unset = QFont()
+        unset.setPointSize(-1)
+        result = strikeout_font(unset, True)
+
+        self.assertGreater(result.pointSize(), 0, "点数必须为正，否则 Qt 会打印警告")
+        self.assertTrue(result.strikeOut())
+
+    def test_strikeout_follows_flag(self):
+        from PySide6.QtGui import QFont
+
+        from everyday.ui.widgets import strikeout_font
+
+        base = QFont()
+        self.assertFalse(strikeout_font(base, False).strikeOut())
+        self.assertTrue(strikeout_font(base, True).strikeOut())
+
+    def test_apply_state_sets_strikeout_for_completed_task(self):
+        from everyday.ui.widgets import TaskRow
+
+        task = self._add_task(title="喝水")
+        row = TaskRow(task, self.context.today())
+        try:
+            self.assertFalse(row.title_label.font().strikeOut())
+            done = task.with_completion(True, self.context.today())
+            row.apply_state(done, self.context.today())
+            self.assertTrue(row.title_label.font().strikeOut())
+            self.assertGreater(row.title_label.font().pointSize(), 0)
+        finally:
+            row.deleteLater()
 
 
 class AppliedStyleTest(UiBaseTestCase):

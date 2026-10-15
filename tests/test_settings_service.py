@@ -7,10 +7,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tests.base import DatabaseTestCase
-
 from everyday.models.settings import AppSettings
 from everyday.services.settings_service import SettingsService
+from tests.base import DatabaseTestCase
 
 
 class AppSettingsTest(unittest.TestCase):

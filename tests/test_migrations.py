@@ -6,10 +6,9 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from tests.base import DatabaseTestCase
-
 from everyday.db import MEMORY, Database, MigrationRunner, discover_migrations
 from everyday.paths import migrations_dir
+from tests.base import DatabaseTestCase
 
 
 def table_names(database: Database) -> set[str]:

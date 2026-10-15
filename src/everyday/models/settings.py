@@ -6,8 +6,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, fields
-from typing import Any, Mapping
+from typing import Any
 
 from everyday.models.preset import DEFAULT_CATEGORY  # noqa: F401  (对外暴露同一常量)
 
@@ -82,7 +83,7 @@ class AppSettings:
         }
 
     @classmethod
-    def from_kv(cls, values: Mapping[str, Any]) -> "AppSettings":
+    def from_kv(cls, values: Mapping[str, Any]) -> AppSettings:
         """从键值字典构造设置对象；缺失键使用默认值。"""
         defaults = cls()
         return cls(
@@ -110,7 +111,7 @@ class AppSettings:
             ),
         )
 
-    def merged(self, **changes: Any) -> "AppSettings":
+    def merged(self, **changes: Any) -> AppSettings:
         """返回替换了部分字段的副本，用于「读-改-写」配置更新。"""
         valid = {f.name for f in fields(self)}
         unknown = set(changes) - valid

@@ -9,7 +9,7 @@
 
 from __future__ import annotations
 
-from everyday.db.connection import Database, MEMORY, open_database
+from everyday.db.connection import MEMORY, Database, open_database
 from everyday.db.migrations import Migration, MigrationRunner, discover_migrations
 from everyday.db.repositories import PresetRepository, SettingsRepository, TaskRepository
 

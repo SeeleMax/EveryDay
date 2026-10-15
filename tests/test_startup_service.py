@@ -10,8 +10,6 @@ import os
 import unittest
 from pathlib import Path
 
-from tests.base import DatabaseTestCase  # noqa: F401  (确保 src 已入 path)
-
 from everyday import APP_NAME
 from everyday.services.startup_service import (
     MINIMIZED_FLAG,
@@ -21,6 +19,7 @@ from everyday.services.startup_service import (
     entry_point_script,
     python_launcher,
 )
+from tests.base import DatabaseTestCase  # noqa: F401  (确保 src 已入 path)
 
 
 class BuildCommandTest(unittest.TestCase):

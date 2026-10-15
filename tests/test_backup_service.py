@@ -8,11 +8,9 @@ import unittest
 from datetime import date, timedelta
 from pathlib import Path
 
-from tests.base import DatabaseTestCase
-
 from everyday.db import Database, MigrationRunner
-from everyday.models.task import TaskItem, TaskType
 from everyday.db.repositories import TaskRepository
+from everyday.models.task import TaskItem, TaskType
 from everyday.services.backup_service import (
     DEFAULT_KEEP,
     BackupService,

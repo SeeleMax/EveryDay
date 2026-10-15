@@ -44,22 +44,35 @@ def project_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
-def data_dir(override: str | os.PathLike[str] | None = None) -> Path:
-    """返回用户数据根目录，并确保它存在。
+def resolve_data_dir(override: str | os.PathLike[str] | None = None) -> Path:
+    """返回用户数据根目录路径，**不创建目录、不产生副作用**。
 
     优先级：显式参数 > 环境变量 > ``%LOCALAPPDATA%\\EveryDay`` > ``~/.everyday``。
     最后一级兜底是为了让非 Windows 环境下的单元测试也能运行。
+
+    单独拆出这个函数，是为了让调用方在目录创建失败时能拿到**目标路径**
+    去给出可读的错误提示——否则 :func:`data_dir` 抛出的异常里只有系统错误码。
     """
     if override is not None:
-        path = Path(override).expanduser()
-    elif os.environ.get(DATA_DIR_ENV):
-        path = Path(os.environ[DATA_DIR_ENV]).expanduser()
-    else:
-        local_app_data = os.environ.get("LOCALAPPDATA")
-        if local_app_data:
-            path = Path(local_app_data) / APP_NAME
-        else:
-            path = Path.home() / f".{APP_NAME.lower()}"
+        return Path(override).expanduser()
+
+    from_env = os.environ.get(DATA_DIR_ENV)
+    if from_env:
+        return Path(from_env).expanduser()
+
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if local_app_data:
+        return Path(local_app_data) / APP_NAME
+    return Path.home() / f".{APP_NAME.lower()}"
+
+
+def data_dir(override: str | os.PathLike[str] | None = None) -> Path:
+    """返回用户数据根目录，并确保它存在。
+
+    :raises OSError: 目录无法创建（权限、只读介质、磁盘满等）。
+        调用方应当捕获它并给出面向用户的提示，而不是直接崩掉。
+    """
+    path = resolve_data_dir(override)
     path.mkdir(parents=True, exist_ok=True)
     return path
 

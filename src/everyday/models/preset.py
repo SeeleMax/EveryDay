@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date, time
-from typing import Any, Mapping
+from typing import Any
 
 from everyday import timeutils
 from everyday.models.task import MAX_TITLE_LENGTH, TaskItem, TaskType
@@ -50,7 +51,7 @@ class PresetTemplate:
         )
 
     @classmethod
-    def from_task(cls, task: TaskItem, category: str = DEFAULT_CATEGORY) -> "PresetTemplate":
+    def from_task(cls, task: TaskItem, category: str = DEFAULT_CATEGORY) -> PresetTemplate:
         """「另存为模板」（文档 5.7 模板管理）。"""
         return cls(
             title=task.title,
@@ -69,7 +70,7 @@ class PresetTemplate:
         }
 
     @classmethod
-    def from_row(cls, row: Mapping[str, Any]) -> "PresetTemplate":
+    def from_row(cls, row: Mapping[str, Any]) -> PresetTemplate:
         """从数据库行构造实体。"""
         return cls(
             id=row["id"],

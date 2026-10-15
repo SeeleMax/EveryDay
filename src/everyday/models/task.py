@@ -7,10 +7,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from datetime import date, datetime, time
 from enum import Enum
-from typing import Any, Mapping
+from typing import Any
 
 from everyday import timeutils
 
@@ -37,7 +38,7 @@ class TaskType(str, Enum):
         return self is not TaskType.ONCE
 
     @classmethod
-    def from_value(cls, value: object) -> "TaskType":
+    def from_value(cls, value: object) -> TaskType:
         """宽松解析：接受枚举、``once`` 这类值、或中文名称，默认单次。"""
         if isinstance(value, TaskType):
             return value
@@ -127,7 +128,7 @@ class TaskItem:
             and self.last_completed_date != day
         )
 
-    def rolled_over(self, day: date) -> "TaskItem":
+    def rolled_over(self, day: date) -> TaskItem:
         """返回完成状态已重置的副本。
 
         保留 ``last_completed_date``：它是「上次完成日期」这一语义的载体，
@@ -137,7 +138,7 @@ class TaskItem:
             return self
         return replace(self, is_completed=False)
 
-    def with_completion(self, completed: bool, day: date) -> "TaskItem":
+    def with_completion(self, completed: bool, day: date) -> TaskItem:
         """返回完成状态被用户切换后的副本（文档 5.4）。"""
         if completed:
             return replace(self, is_completed=True, last_completed_date=day)
@@ -170,7 +171,7 @@ class TaskItem:
         }
 
     @classmethod
-    def from_row(cls, row: Mapping[str, Any]) -> "TaskItem":
+    def from_row(cls, row: Mapping[str, Any]) -> TaskItem:
         """从数据库行构造实体。
 
         这里绕开 ``__post_init__`` 的强校验路径：数据库里可能存在历史脏数据
@@ -188,6 +189,6 @@ class TaskItem:
         item.created_at = timeutils.parse_datetime(row["created_at"]) or timeutils.now_local()
         return item
 
-    def clone(self) -> "TaskItem":
+    def clone(self) -> TaskItem:
         """深拷贝一份（``replace`` 只做浅拷贝，但字段都是不可变类型）。"""
         return replace(self)

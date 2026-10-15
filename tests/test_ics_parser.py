@@ -9,8 +9,6 @@ from __future__ import annotations
 import unittest
 from datetime import date, datetime, timedelta, timezone
 
-from tests.base import DatabaseTestCase  # noqa: F401  (确保 src 已入 path)
-
 from everyday.services.ics_parser import (
     MAX_OCCURRENCES_PER_EVENT,
     CalendarEvent,
@@ -22,6 +20,7 @@ from everyday.services.ics_parser import (
     unescape_text,
     unfold_lines,
 )
+from tests.base import DatabaseTestCase  # noqa: F401  (确保 src 已入 path)
 
 WINDOW_START = date(2026, 10, 5)
 WINDOW_END = date(2026, 10, 11)
