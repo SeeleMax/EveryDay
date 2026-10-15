@@ -96,13 +96,16 @@
   首次启动 / 二次启动备份 / `--minimized` / `--data-dir` 隔离 / 干净退出
 
 **验证结果**
-- 单元测试：230 项全部通过（2 项平台断言跳过）
-- 核心服务覆盖率：**86.2%**（1717 / 1992 可执行行，口径见 `pyproject.toml`）
+- 测试：**236 项通过 + 2 项平台跳过**（`pytest` 9.1.1），0 失败
+- 核心服务覆盖率：**85%**（`pytest-cov` 7.1.0；口径见 `pyproject.toml`）
+- 静态检查：**`ruff check` 0 警告**
 - 端到端启动/退出冒烟：12/12 与 14/14 项通过，退出码 0
+- 真实窗口：桌面实测启动成功，stderr 无任何 Qt 警告
+- 常驻内存：129 MB（未达文档 <50MB；Qt6 最小空窗口基线即 36.4 MB）
 
 ### Fixed
 
-修复 4 个**只有真正运行才会暴露**的缺陷（详见
+修复 6 个**只有真正运行才会暴露**的缺陷（详见
 [docs/known-issues.md](docs/known-issues.md) 第一节）：
 
 - **退出应用无效（致命）**：`QApplication.quit()` 会先给顶层窗口派发 close 事件，
@@ -117,6 +120,30 @@
   跳过了日期写入，日期静默落到系统当天。
 - **首次运行生成空数据库备份**：`create_backup()` 先 `connect()` 会造出空库文件，
   于是备份出一个空数据库并占掉当天的备份名额。
+- **数据目录建不出来时裸崩溃、用户什么都看不到**：这一步发生在日志初始化之前，
+  抛出的 `PermissionError` 在 `pythonw.exe` 启动下完全不可见。现在会输出可读中文
+  提示（目标路径 + 可能原因 + `--data-dir` 解决办法）并弹原生消息框，退出码 2；
+  `paths.resolve_data_dir()` 被拆成「只算路径、不建目录」的纯函数以便给出目标路径。
+- **QSS 用 `px` 字号导致 Qt 每次启动打印字体警告**（`setPointSize: Point size <= 0`）：
+  `px` 只设置像素尺寸，点数字号保持 -1。全部改用 `pt`，对 DPI 与用户字体缩放也更正确。
+
+### Changed
+
+- 依赖改为 **`PySide6-Essentials`**（82.2 MB）而非 `PySide6` 元包（200+ MB）：
+  后者会连带下载 `PySide6-WebEngine`（131.7 MB 的 Chromium）、`Addons`、`Pdf`，
+  本应用一个都不用。导入包名仍是 `PySide6`，代码零改动。
+- 按 `ruff` 规则整理了全部导入顺序与类型注解写法，`ruff check` 现在 0 警告。
+
+### Added
+
+- `paths.resolve_data_dir()`：只解析数据目录路径、不产生副作用。
+- `app._report_fatal_startup_error()` / `_show_native_error_dialog()`：
+  启动期致命错误的人类可读提示（不依赖 Qt，`_ctypes` 不可用时也会降级）。
+- `logging_setup.reset_logging()`：拆除本模块挂载的 handler，便于集成测试
+  在同一进程里反复启动应用（否则 Windows 上日志文件被占用、临时目录删不掉）。
+- `widgets.strikeout_font()`：保证删除线字体的点数有效。
+- 测试新增 `tests/test_app_startup.py`（端到端启动/退出 + 数据目录解析与失败提示）、
+  `tests/test_ui_smoke.py` 的 UI 冒烟与退出行为回归、`tools/coverage_report.py`。
 
 同时修复了若干测试自身缺陷：临时目录清理时未关闭 SQLite 连接导致 Windows
 文件占用；`QApplication.exec` 是静态方法却被当作实例方法调用；
@@ -127,6 +154,6 @@
 见 [docs/known-issues.md](docs/known-issues.md)。主要项：
 ICS 的 `TZID` 按本地时间解释；不支持 `BYDAY` 等高级递归修饰符；
 日历网络读取仍在 UI 线程同步执行；未实现单实例互斥；
-每晚 29/30/31 号任务在短月跳过而非顺延；
-**D3 自包含可执行程序未产出**（本机 `pip` 完全不可用，非代码问题，
-打包命令见验收报告 §5.1）。
+月末 29/30/31 号任务在短月跳过而非顺延；
+**常驻内存 129MB 未达文档的 <50MB**（PySide6/Qt6 基线本身即 36.4MB，该指标在
+当前技术栈上不可达）；**D3 自包含可执行程序未产出**（打包命令见验收报告 §5.1）。

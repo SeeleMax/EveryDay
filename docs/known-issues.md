@@ -3,8 +3,8 @@
 > **诚实声明**：本文件列出所有「未解决 / 未验证 / 有取舍」的问题，不做隐瞒。
 > 最后更新：v1.0.0 验证完成后。
 
-**当前验证状态**：单元测试 230 项全部通过；核心服务覆盖率 86.2%；
-端到端启动/退出冒烟 12/12 与 14/14 全部通过。
+**当前验证状态**：`pytest` 236 项通过 + 2 项平台跳过；核心服务覆盖率 85%（`pytest-cov`）；
+`ruff check` 0 警告；端到端启动/退出冒烟 12/12 与 14/14 通过；已在真实窗口下成功启动。
 详见 [acceptance-report.md](acceptance-report.md)。
 
 ---
@@ -52,35 +52,66 @@
 | 修复 | 源库文件尚不存在（且非内存库）时直接跳过备份 |
 | 回归测试 | `test_backup_service.py::test_unopened_database_object_returns_none_without_creating_file`；`test_app_startup.py::test_first_run_does_not_create_empty_backup` |
 
+### BF-05 数据目录建不出来时裸崩溃、且用户看不到任何信息（已修复）
+
+| 项目 | 说明 |
+|---|---|
+| 现象 | 目标数据目录无法创建时，程序在**日志初始化之前**抛出 `PermissionError` 直接死掉。用 `pythonw.exe` 启动（双击快捷方式、开机自启）时没有控制台，用户**完全看不到任何提示**，程序就无声无息地消失了 |
+| 发现方式 | 在真实桌面启动时真的遇到了 `WinError 5`（我自己强删目录造成的 pending-delete 状态） |
+| 修复 | 拆出纯函数 `paths.resolve_data_dir()`（只算路径、不建目录），使调用方拿得到目标路径；`main()` 捕获 `OSError` 并输出可读中文提示（目标路径 + 可能原因 + `--data-dir` 解决办法），同时用 Windows 原生消息框兜底，退出码 2 |
+| 回归测试 | `test_app_startup.py::DataDirectoryResolutionTest`（5 项，含「ctypes 不可用时也不能抛」） |
+| 附带收益 | 这个修复让后续所有排查都省事了：同样的失败现在直接给出中文原因 |
+
+### BF-06 QSS 用 `px` 字号导致 Qt 每次启动打印字体警告（已修复）
+
+| 项目 | 说明 |
+|---|---|
+| 现象 | 每次启动 stderr 都出现 `QFont::setPointSize: Point size <= 0 (-1), must be greater than 0` |
+| 根因 | QSS 里写 `font-size: 13px` 时 Qt 只设置字体的**像素尺寸**，点数字号保持 `-1`（未指定）；之后任何对字体调用 `setPointSize` 的代码路径都会触发该警告 |
+| 修复 | 所有 `font-size` 改用 `pt`（对 DPI 缩放与用户的「字体大小」辅助功能设置也更正确）；`widgets.strikeout_font()` 对点数做兜底校验 |
+| 验证 | 修复后真实窗口启动的 stderr **完全干净，无任何 Qt 警告** |
+| 回归测试 | `test_ui_smoke.py::StrikeoutFontTest`（3 项） |
+
 ---
 
 ## 二、环境层面的问题（非代码问题）
 
-### ENV-01 本机 `pip` 完全不可用
+### ENV-01 `pip` 只在 Anaconda 那条链路上坏掉（此前结论已更正）
 
 | 项目 | 说明 |
 |---|---|
-| 现象 | venv 的 pip 每次执行都会崩溃：`FileNotFoundError: [WinError 2]`（`platformdirs` 查询 `CSIDL_COMMON_APPDATA` 失败）；Anaconda 自带的 pip 则报 `OSError: [Errno 22] Invalid argument: ...\distlib\w32.exe` |
-| 尝试过 | `PIP_CONFIG_FILE=nul`、`pip --isolated`、`--no-input`、改用 Anaconda 的 pip 装到 venv —— 均失败 |
-| 影响 | 装不上 `pytest` / `pytest-cov` / `pyinstaller`。因此交付物 **D3 自包含可执行程序未产出** |
-| 应对 | 验证改用标准库：`python -m unittest` 跑测试；自研 `tools/coverage_report.py`（基于 `trace`）测覆盖率，得到 86.2% |
-| 需要你做 | 在你的环境里 `pip install -r requirements-dev.txt` 与 `pip install pyinstaller` 即可复现完整工具链 |
+| **更正** | 我最初报告「本机 pip 完全不可用」是**错的**——当时只试了 2 个解释器。实际逐个核对的结果是： |
+| ⛔ Anaconda 派生的 venv | 崩在 `platformdirs` 查询 `CSIDL_COMMON_APPDATA` 失败；且该 venv 的 `import ctypes` 直接报 `DLL load failed while importing _ctypes`（venv 创建时 `venvlauncher.exe` 复制失败留下的隐患） |
+| ⛔ `E:\Anaconda\python.exe` 自带的 pip | 报 `OSError: [Errno 22] Invalid argument: ...\pip\_vendor\distlib\w32.exe`（文件损坏） |
+| ✅ **官方 Python 3.13**（`%LOCALAPPDATA%\Programs\Python\Python313`） | **完全正常**，`ctypes` 也正常 |
+| 处置 | 用官方 Python 3.13 重建了 `.venv`，装好 `PySide6-Essentials` / `pytest` / `pytest-cov` / `ruff`。验证工具链因此从「unittest + 自研 trace 覆盖率」升级为「pytest + pytest-cov + ruff」 |
+| 影响 | 交付物 D3 仍未产出（PyInstaller 未安装），但已无环境障碍；打包命令见验收报告 §5.1 |
 
-### ENV-02 Qt 提示找不到字体目录
-
-| 项目 | 说明 |
-|---|---|
-| 现象 | 离屏模式下打印 `QFontDatabase: Cannot find font directory .../PySide6/lib/fonts` |
-| 影响 | 无。Qt6 起不再随包分发字体，离屏渲染不需要字体；真实桌面会话使用系统字体 |
-| 建议 | 忽略；若离屏截图需要文字，可用 `QT_QPA_FONTDIR` 指定字体目录 |
-
-### ENV-03 被杀死的进程会留下子进程
+### ENV-02 依赖体积：别用 `PySide6` 元包
 
 | 项目 | 说明 |
 |---|---|
-| 现象 | 终止包装它的 shell 并不会终止已启动的 Python 应用进程，残留进程会长期持有日志与数据库文件，导致后续运行出现 `PermissionError` |
-| 影响 | 仅影响调试过程，不影响产品 |
-| 应对 | 重启前用 `Get-Process python` 检查；本仓库的冒烟脚本自带看门狗，正常路径不会挂死 |
+| 现象 | `pip install PySide6` 会连带下载 `PySide6-WebEngine`（**131.7 MB**，内含 Chromium）、`Addons`、`Pdf`，总计 200+ MB |
+| 影响 | 安装极慢（实测 1~3 MB/s 时仅 WebEngine 就要 1~2 分钟），且运行时另占数十 MB 内存 |
+| 处置 | `requirements.txt` / `pyproject.toml` 改为 **`PySide6-Essentials`（82.2 MB）**。导入的包名仍是 `PySide6`，**代码零改动**。实测安装耗时 138 秒 |
+| 附带 | 期间 pip 缓存被反复重试撑到 **6.8 GB**，已清理 |
+
+### ENV-03 DSH 沙箱禁止在已有路径之外新建文件
+
+| 项目 | 说明 |
+|---|---|
+| 现象 | **后台作业**里 `mkdir` 一个新目录、写一个新文件都返回 `WinError 5 拒绝访问`；但对**已存在**的目录/文件读写正常（后台作业里 `mkdir logs` 成功而 `mkdir backups` 失败，仅因为 `logs` 已被前台创建过） |
+| 影响 | 从本会话直接启动应用时，`%LOCALAPPDATA%\EveryDay` 无法建立，应用报「无法建立数据目录」并以退出码 2 结束 |
+| 不是产品问题 | 前台 shell 与真实用户会话不受此限制；`--data-dir` 指向工作区内路径即可正常启动（本次就是这样在桌面真实跑起来的） |
+| 附带坑 | 对 `%LOCALAPPDATA%\EveryDay` 做 `Remove-Item -Recurse -Force` 后，该路径会进入 **pending-delete** 状态，短时间内重建必然 `WinError 5`。等一段时间或换个目录名即可 |
+
+### ENV-04 被杀死的进程会留下子进程
+
+| 项目 | 说明 |
+|---|---|
+| 现象 | 终止包装它的 shell 并不会终止已启动的 Python 应用进程；venv 的 `python.exe` 还是个**启动器存根**，真实解释器是它的子进程（所以量内存时要找带窗口标题的那个） |
+| 影响 | 残留进程长期持有日志与数据库文件，导致后续运行出现 `PermissionError` |
+| 应对 | 重启前用 `Get-Process python` 检查；冒烟脚本自带看门狗，正常路径不会挂死 |
 
 ---
 
@@ -141,9 +172,26 @@ V1 文档 4.1 的 `TaskItem` 只有 `DueDate`，但 5.5 要求「每周固定日
 ### KI-10 `ui/` 未计入覆盖率
 
 `pyproject.toml` 把 `ui/*` 排除在覆盖率统计外——Qt 的绘制与事件循环在离屏
-模式下覆盖数字没有意义。UI 改为由 38 项冒烟测试 + 7 项启动集成测试
-覆盖行为正确性（窗口构造、信号连接、操作落库、退出行为）。
+模式下覆盖数字没有意义。UI 改为由 **49 项 UI 冒烟测试 + 12 项启动集成测试**
+覆盖行为正确性（窗口构造、信号连接、操作落库、退出行为、字体健壮性）。
 未覆盖的仍是**真实鼠标/键盘交互**与**真实多屏**。
+
+### KI-15 常驻内存 129 MB，未达文档的 <50MB（技术栈约束）
+
+| 项目 | 说明 |
+|---|---|
+| 实测 | EveryDay 空闲态 **129.1 MB 工作集 / 59.0 MB 私有** |
+| 对照 | 同一解释器、同一平台插件下的**最小 Qt6 空窗口**：36.4 MB / 18.0 MB |
+| 结论 | 文档「<50MB」是按 WPF 假设写的。**PySide6/Qt6 单是框架基线就 36.4 MB**，该指标在当前技术栈上不可达 |
+| 但 | EveryDay 自身约 93 MB 的开销偏大，值得在 v1.1 P6 剖析 |
+| 优先怀疑 | ① 两个顶层窗口（悬浮窗启用 `WA_TranslucentBackground`，Windows 上需要 DWM 合成表面）② `QListWidget` + `setItemWidget` 的行控件方案（v1.1 计划改 `QListView` + `QAbstractListModel` 虚拟化）③ 应用级 QSS 的解析缓存 ④ 图标位图 |
+| 建议 | 若 <50MB 是硬指标，需要重新评估技术选型（例如用原生 Win32 或 Tkinter），而不是继续优化 Qt |
+
+### KI-16 应用退出后被托盘图标残留
+
+终止进程（任务管理器结束进程、本会话的强制 kill）时不会走 `aboutToQuit`，
+Windows 托盘区可能短暂残留一个死图标，鼠标划过即消失。正常通过托盘菜单
+「退出应用」时不会出现（该路径已由端到端测试覆盖）。
 
 ### KI-11 悬浮窗拖动时会触发设置写入
 

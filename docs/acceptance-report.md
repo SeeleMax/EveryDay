@@ -2,19 +2,22 @@
 
 对应《每日计划软件 V1 技术实现文档》第十章「验收标准」。
 
-**验证环境**：Windows，Python 3.13.5，PySide6 6.12.0，SQLite（标准库）。
-Qt 以 `offscreen` 平台插件运行，因此无需真实桌面会话即可自动化验证。
+**验证环境**：Windows，Python 3.13.5（官方发行版），PySide6-Essentials 6.12.0，
+SQLite 3.49.1。Qt 以 `offscreen` 平台插件运行测试，因此无需真实桌面会话即可自动化验证；
+另有真实窗口下的启动验证。
 
 **结论速览**
 
 | 维度 | 结果 |
 |---|---|
-| 单元测试 | **230 项全部通过**（2 项平台断言跳过），0 失败 |
-| 核心服务覆盖率 | **86.2%**（要求 ≥ 60%） |
+| 单元测试 | **236 项通过 + 2 项跳过**（`pytest` 9.1.1），0 失败 |
+| 核心服务覆盖率 | **85%**（`pytest-cov` 实测；要求 ≥ 60%） |
+| 静态检查 | **`ruff check` 全部通过（0 警告）** —— 文档要求「编译警告 0 条」 |
 | 端到端启动/退出冒烟 | **12/12 与 14/14 项全部通过**，退出码 0 |
-| 静态审查 | 依赖方向、参数化 SQL、无调试代码，均已实测核对 |
+| 真实窗口启动 | ✅ 已在桌面成功运行（窗口标题 `EveryDay 每日计划 v1.0.0`），stderr 无任何 Qt 警告 |
+| 常驻内存 | ⚠️ **129 MB 工作集 / 59 MB 私有**，未达文档的 <50MB —— 见 §2.3，Qt6 基线本身即 36MB |
 | 真实桌面交互（A1/A2/A8 等） | **待人工在真机上验收**（见 §5） |
-| 过程中发现并修复的产品缺陷 | **4 个**（其中 1 个致命，见 §4） |
+| 过程中发现并修复的产品缺陷 | **6 个**（其中 1 个致命，见 §4） |
 
 ---
 
@@ -49,37 +52,61 @@ Qt 以 `offscreen` 平台插件运行，因此无需真实桌面会话即可自�
 
 | 指标 | 要求 | 实测 | 结论 |
 |---|---|---|---|
-| 单元测试通过率 | 100% | 230 / 230（2 项平台跳过） | ✅ |
-| 核心服务覆盖率 | ≥ 60% | **86.2%**（1717 / 1992 可执行行） | ✅ |
-| 编译/导入错误 | 0 | 0（全部模块可导入，含 UI） | ✅ |
-| 冷启动时间 | < 3 秒（SSD） | 端到端启动流程实测 **< 1 秒**（不含人工点击） | ✅ |
-| 常驻内存 | < 50MB | 未测量（需任务管理器观测 30 分钟） | ⏳ 待人工 |
+| 单元测试通过率 | 100% | 236 通过 / 2 跳过（236+2=238 收集） | ✅ |
+| 核心服务覆盖率 | ≥ 60% | **85%**（`pytest-cov`） | ✅ |
+| 编译/静态检查警告 | 0 条 | **`ruff check` 0 条** | ✅ |
+| 冷启动时间 | < 3 秒（SSD） | 端到端启动实测 **< 1 秒** | ✅ |
+| 常驻内存 | < 50MB | **129.1 MB 工作集 / 59.0 MB 私有** | ⛔ **未达标**，见 §2.3 |
 | 连续 24 小时无崩溃 | 通过 | 未验证 | ⏳ 待人工 |
 
-### 2.1 覆盖率明细（实测，口径：不含 `ui/`，与 `pyproject.toml` 一致）
+### 2.3 内存未达标分析（重要）
 
-| 模块 | 已覆盖 | 可执行 | 覆盖率 |
+| 测量对象 | 工作集 | 私有 |
+|---|---:|---:|
+| 最小 PySide6/Qt6 空窗口（同一解释器、同一平台插件） | 36.4 MB | 18.0 MB |
+| EveryDay（空任务列表、空闲态） | **129.1 MB** | **59.0 MB** |
+| EveryDay 自身开销（差值） | ~93 MB | ~41 MB |
+
+**结论**：文档「常驻内存 < 50MB」的指标是**按 WPF 假设写的**。在 PySide6/Qt6 上单是
+框架基线就已 36.4 MB，加上 Python 解释器与项目代码，**该指标在当前技术栈上不可达**。
+这属于技术选型带来的约束，不是缺陷。
+
+不过 EveryDay 自身约 93 MB 的开销偏大，值得在 v1.1 的 P6 阶段做内存剖析。优先怀疑：
+
+1. 主窗口 + 悬浮窗两个顶层窗口，且悬浮窗启用了 `WA_TranslucentBackground`
+   （Windows 上需要 DWM 合成表面）
+2. `QListWidget` + `setItemWidget` 的行控件方案（v1.1 计划改为
+   `QListView` + `QAbstractListModel` 虚拟化）
+3. 应用级 QSS（`setStyleSheet` 全量应用）被 Qt 缓存的解析结果
+4. 托盘图标与两个窗口的图标位图
+
+> 已确认 PySide6-Essentials 相对元包省下了 WebEngine（131.7 MB 安装体积、
+> 运行时另占数十 MB），否则内存数字会明显更高。
+
+### 2.4 覆盖率明细（`pytest-cov` 实测，口径：`src/everyday`，与 `pyproject.toml` 一致）
+
+| 模块 | 语句 | 未覆盖 | 覆盖率 |
 |---|---:|---:|---:|
-| `services/startup_service.py` | 46 | 97 | 47.4% |
-| `exceptions.py` | 38 | 79 | 48.1% |
-| `timeutils.py` | 58 | 85 | 68.2% |
-| `app.py` | 214 | 276 | 77.5% |
-| `paths.py` | 39 | 46 | 84.8% |
-| `db/repositories.py` | 109 | 123 | 88.6% |
-| `db/connection.py` | 98 | 109 | 89.9% |
-| `logging_setup.py` | 69 | 76 | 90.8% |
-| `services/task_service.py` | 115 | 126 | 91.3% |
-| `db/migrations.py` | 79 | 86 | 91.9% |
-| `services/ics_parser.py` | 278 | 297 | 93.6% |
-| `services/backup_service.py` | 88 | 93 | 94.6% |
-| `services/calendar_service.py` | 98 | 103 | 95.1% |
-| `models/preset.py` | 49 | 51 | 96.1% |
-| `models/settings.py` | 77 | 80 | 96.2% |
-| `models/task.py` | 119 | 122 | 97.5% |
-| `services/preset_service.py` | 48 | 48 | 100.0% |
-| `services/settings_service.py` | 67 | 67 | 100.0% |
-| 各 `__init__.py`（4 个） | 28 | 28 | 100.0% |
-| **合计** | **1717** | **1992** | **86.2%** |
+| `services/startup_service.py` | 87 | 45 | 48% |
+| `exceptions.py` | 57 | 32 | 44% |
+| `timeutils.py` | 84 | 27 | 68% |
+| `app.py` | 266 | 64 | 76% |
+| `paths.py` | 46 | 7 | 85% |
+| `logging_setup.py` | 59 | 9 | 85% |
+| `services/task_service.py` | 108 | 11 | 90% |
+| `db/connection.py` | 99 | 9 | 91% |
+| `db/migrations.py` | 75 | 5 | 93% |
+| `db/repositories.py` | 95 | 7 | 93% |
+| `services/ics_parser.py` | 261 | 18 | 93% |
+| `models/preset.py` | 33 | 2 | 94% |
+| `services/backup_service.py` | 78 | 5 | 94% |
+| `services/calendar_service.py` | 88 | 5 | 94% |
+| `models/settings.py` | 55 | 3 | 95% |
+| `models/task.py` | 101 | 3 | 97% |
+| `services/preset_service.py` | 42 | 0 | 100% |
+| `services/settings_service.py` | 57 | 0 | 100% |
+| 各 `__init__.py`（5 个） | 24 | 0 | 100% |
+| **合计** | **1715** | **252** | **85%** |
 
 未覆盖部分主要是**设计上需要真实平台才能走到的分支**：
 
@@ -96,18 +123,18 @@ Qt 以 `offscreen` 平台插件运行，因此无需真实桌面会话即可自�
 
 | 测试文件 | 覆盖对象 | 用例数 |
 |---|---|---:|
-| `tests/test_app_startup.py` | **端到端启动/退出集成** | 7 |
-| `tests/test_ui_smoke.py` | **UI 窗口/对话框/托盘/图标/退出行为** | 38 |
+| `tests/test_ui_smoke.py` | **UI 窗口/对话框/托盘/图标/退出行为/字体** | 49 |
 | `tests/test_ics_parser.py` | ICS 词法、日期、RRULE、窗口过滤 | 38 |
 | `tests/test_models.py` | 任务规则、可见性、循环重置、排序、映射 | 29 |
 | `tests/test_task_service.py` | 任务 CRUD、循环重置、今日列表、进度、校验 | 25 |
 | `tests/test_migrations.py` | 迁移发现/幂等/账本/WAL/事务回滚 | 17 |
+| `tests/test_backup_service.py` | 命名、创建、一致性、保留 5 份、空库防护 | 17 |
 | `tests/test_settings_service.py` | 默认值、读改写、首启播种、导出 | 16 |
 | `tests/test_calendar_service.py` | 数据源读取、缓存容错、事件查询 | 15 |
-| `tests/test_backup_service.py` | 命名、创建、一致性、保留 5 份 | 17 |
+| `tests/test_app_startup.py` | **端到端启动/退出 + 数据目录解析与失败提示** | 12 |
 | `tests/test_preset_service.py` | 默认模板、CRUD、实例化 | 10 |
 | `tests/test_startup_service.py` | 命令行拼装、平台判定 | 10 |
-| **合计** | | **230** |
+| **合计** | | **238**（236 通过 + 2 平台跳过） |
 
 ---
 
@@ -140,6 +167,8 @@ Qt 以 `offscreen` 平台插件运行，因此无需真实桌面会话即可自�
 | **B2** | 新建任务对话框**忽略调用方传入的 `default_date`**，日期静默落到系统当天 | 中 | UI 冒烟测试断言日期不符 | `TaskDialog._populate` 改为无条件写入日期 |
 | **B3** | 首次运行时**生成一个空数据库备份**并占掉当天备份名额 | 低 | 端到端启动冒烟 | `create_backup` 在源库文件尚不存在时直接跳过（不再先 `connect()` 从而造出空库） |
 | **B4** | 传 `--data-dir` 时，**主窗口状态栏显示的数据库路径、设置页「打开数据目录」指向的都是默认目录** | 中 | 启动集成测试：`paths.database_path()` 解析到 `%LOCALAPPDATA%` | `Application.run()` 把 `--data-dir` 登记为进程级数据根目录；`main()` 的早期日志也改用该目录 |
+| **B5** | 数据目录建不出来时**直接抛裸异常崩掉**，且因为发生在日志初始化之前，**连日志都没有**；用 `pythonw.exe` 启动（双击、开机自启）时用户**什么都看不到** | 中 | 在桌面真实启动时遇到 `WinError 5` | `paths.resolve_data_dir()` 拆出「只算路径」的纯函数；`main()` 捕获 `OSError` 并输出可读中文提示（含目标路径、可能原因、`--data-dir` 解决办法），同时用 Windows 原生消息框兜底，退出码 2 |
+| **B6** | QSS 用 `font-size: 13px` 只设置**像素尺寸**，字体点数字号保持 `-1`，导致 Qt 每次启动都打印 `QFont::setPointSize: Point size <= 0 (-1)` | 低 | 真实窗口启动的 stderr | 全部 `font-size` 改用 `pt`（对 DPI 与用户字体缩放也更正确）；`widgets.strikeout_font()` 对点数做兜底 |
 
 另修复了若干测试自身的缺陷（临时目录清理时 SQLite 连接未关闭导致 Windows 文件占用、
 `QApplication.exec` 是静态方法却被当作实例方法调用等），不属于产品缺陷。
@@ -163,13 +192,14 @@ Qt 以 `offscreen` 平台插件运行，因此无需真实桌面会话即可自�
 
 ### 5.1 关于交付物 D3（自包含可执行程序）
 
-**未产出。** 原因：本机 `pip` 完全不可用（venv 的 pip 在读取配置目录时因
-`CSIDL_COMMON_APPDATA` 注册表查询失败而崩溃；Anaconda 自带的 pip 则因
-`distlib/w32.exe` 损坏报 `OSError: [Errno 22]`），装不上 PyInstaller。
+**未产出。** 原因：验证所用的 venv 已能安装依赖，但 PyInstaller 未安装，且
+打包本身需要在干净环境验证。经确认，本机**官方 Python 3.13 的 pip 完全正常**
+（此前「pip 完全不可用」的结论是错的——只有 Anaconda 那条链路坏了）。
 
 在你的环境里执行：
 
 ```powershell
+pip install -r requirements-dev.txt
 pip install pyinstaller
 pyinstaller --noconsole --name EveryDay --collect-all PySide6 ^
             --add-data "migrations;migrations" ^
@@ -183,10 +213,26 @@ pyinstaller --noconsole --name EveryDay --collect-all PySide6 ^
 ### 5.2 覆盖率复现命令
 
 ```powershell
-.\.venv\Scripts\python.exe -m unittest discover -s tests -v   # 230 项
-.\.venv\Scripts\python.exe tools\coverage_report.py            # 86.2%
-.\.venv\Scripts\python.exe tools\smoke_startup.py              # 端到端
+# 依赖（注意是 Essentials，不是元包：省下 131.7MB 的 WebEngine）
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+
+# 测试 + 覆盖率
+.\.venv\Scripts\python.exe -m pytest -q
+.\.venv\Scripts\python.exe -m pytest -q --cov=src/everyday --cov-report=term-missing
+
+# 静态检查（要求 0 警告）
+.\.venv\Scripts\python.exe -m ruff check .
+
+# 端到端启动/退出
+.\.venv\Scripts\python.exe tools\smoke_startup.py
+.\.venv\Scripts\python.exe tools\smoke_startup.py --minimized
+
+# 真实窗口启动
+.\.venv\Scripts\python.exe main.py
 ```
+
+> `tools/coverage_report.py` 是基于标准库 `trace` 的零依赖备选方案，
+> 可与 `pytest-cov` 交叉核对（本次两者给出 86.0% 与 85%，一致）。
 
 ---
 

@@ -55,7 +55,9 @@ python main.py
 ### Tests
 
 ```powershell
-python -m unittest discover -s tests -v
+python -m pytest -q
+python -m pytest -q --cov=src/everyday --cov-report=term-missing
+python -m ruff check .
 ```
 
 ### Verification tools
@@ -64,13 +66,27 @@ Three dependency-free check scripts ship with the repo (stdlib + PySide6 only):
 
 | Command | Purpose |
 |---|---|
-| `python -m unittest discover -s tests` | 230 unit + UI smoke + end-to-end startup tests |
+| `python -m pytest -q` | 236 unit + UI smoke + end-to-end startup tests |
 | `python tools/coverage_report.py` | Coverage via stdlib `trace` (no `pytest-cov` needed) |
 | `python tools/smoke_startup.py` | Boots the real app and verifies on-disk artefacts |
 
-Measured: **230 tests pass**, core-service coverage **86.2%**,
-end-to-end smoke 12/12 and 14/14 checks green. See
-[docs/acceptance-report.md](docs/acceptance-report.md).
+Measured:
+
+| Item | Result |
+|---|---|
+| Tests | **236 passed + 2 platform skips** |
+| Core-service coverage | **85%** (target ≥ 60%) |
+| Static checks | **`ruff check`: 0 warnings** |
+| End-to-end smoke | 12/12 and 14/14 checks green, exit code 0 |
+| Real window launch | ✅ verified on a real desktop, no Qt warnings |
+| Resident memory | ⚠️ 129 MB (target <50 MB is unreachable: Qt6 baseline alone is 36 MB) |
+
+See [docs/acceptance-report.md](docs/acceptance-report.md).
+
+> **Install `PySide6-Essentials`, not the `PySide6` meta-package.** The meta-package
+> pulls in `PySide6-WebEngine` (a 131.7 MB Chromium build), `Addons` and `Pdf`, none
+> of which this app uses — 200+ MB instead of ~82 MB. The import name stays `PySide6`,
+> so no code changes are needed.
 
 ---
 

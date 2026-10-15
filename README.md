@@ -66,16 +66,26 @@ pytest
 
 | 命令 | 作用 |
 |---|---|
-| `python -m unittest discover -s tests` | 230 项单元测试 + UI 冒烟 + 端到端启动集成 |
-| `python tools/coverage_report.py` | 覆盖率（基于标准库 `trace`，无需 `pytest-cov`） |
+| `python -m pytest -q` | 236 项单元测试 + UI 冒烟 + 端到端启动集成 |
+| `python tools/coverage_report.py` | 覆盖率备选方案（基于标准库 `trace`，无需 `pytest-cov`） |
 | `python tools/smoke_startup.py` | 真实启动一次应用并核对落盘产物，可加 `--minimized` / `--data-dir` |
 
-当前实测结果：**230 项测试全部通过**，核心服务覆盖率 **86.2%**，
-端到端冒烟 12/12 与 14/14 项通过。详见
-[docs/acceptance-report.md](docs/acceptance-report.md)。
+当前实测结果（`pytest` 9.1.1 + `pytest-cov` 7.1.0 + `ruff` 0.17.0）：
 
-> 若你的环境里 `pip` 正常，也可以直接用 `pytest` 与 `pytest-cov`；
-> 这两个脚本是为了在 `pip` 不可用的环境下仍能完成验收而写的。
+| 项目 | 结果 |
+|---|---|
+| 测试 | **236 通过 + 2 项平台跳过**，0 失败 |
+| 核心服务覆盖率 | **85%**（要求 ≥ 60%） |
+| 静态检查 | **`ruff check` 0 警告** |
+| 端到端冒烟 | 12/12 与 14/14 项通过，退出码 0 |
+| 真实窗口启动 | ✅ 桌面实测成功，stderr 无 Qt 警告 |
+| 常驻内存 | ⚠️ 129 MB（未达文档 <50MB，Qt6 基线本身即 36MB） |
+
+详见 [docs/acceptance-report.md](docs/acceptance-report.md)。
+
+> **依赖请用 `PySide6-Essentials` 而不是 `PySide6` 元包**：元包会连带下载
+> `PySide6-WebEngine`（131.7 MB 的 Chromium）等本应用完全用不到的东西，
+> 安装体积从约 82 MB 涨到 200+ MB。导入的包名仍是 `PySide6`，代码无需改动。
 
 ---
 
