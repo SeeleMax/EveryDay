@@ -107,14 +107,52 @@ class TaskServiceTodayListTest(DatabaseTestCase):
         super().setUp()
         self.service = TaskService(self.tasks)
 
-    def test_completed_once_task_disappears_from_today(self):
+    def test_completed_once_task_stays_in_today(self):
+        """完成的任务不再消失，而是留在列表里（半透明 + 沉到底部）。"""
         task = self.service.create(
             TaskItem(title="交报告", type=TaskType.ONCE, due_date=MONDAY)
         )
         self.assertEqual(len(self.service.list_today(MONDAY)), 1)
 
         self.service.set_completed(task.id, True, MONDAY)
-        self.assertEqual(self.service.list_today(MONDAY), [])
+        listed = self.service.list_today(MONDAY)
+        self.assertEqual(len(listed), 1, "单次任务完成后应留在今日列表")
+        self.assertTrue(listed[0].is_completed)
+
+    def test_completed_once_task_gone_the_next_day(self):
+        """但只在完成当天保留；次日不再出现，否则历史任务会堆积。"""
+        task = self.service.create(
+            TaskItem(title="交报告", type=TaskType.ONCE, due_date=MONDAY)
+        )
+        self.service.set_completed(task.id, True, MONDAY)
+
+        self.assertEqual(len(self.service.list_today(MONDAY)), 1)
+        self.assertEqual(self.service.list_today(TUESDAY), [])
+
+    def test_completed_tasks_sink_to_the_bottom(self):
+        """已完成的排到最后，且不再按提醒时间插入未完成项之间。"""
+        early = self.service.create(
+            TaskItem(title="早会", type=TaskType.DAILY, remind_time=time(8, 0))
+        )
+        self.service.create(
+            TaskItem(title="午间", type=TaskType.DAILY, remind_time=time(12, 0))
+        )
+        late = self.service.create(
+            TaskItem(title="晚间", type=TaskType.DAILY, remind_time=time(20, 0))
+        )
+
+        # 完成「早会」（8:00）后它应当沉到最下面，而不是留在首位
+        self.service.set_completed(early.id, True, MONDAY)
+        self.assertEqual(
+            [t.title for t in self.service.list_today(MONDAY)],
+            ["午间", "晚间", "早会"],
+        )
+
+        # 再完成「晚间」，已完成的两项都排在未完成之后
+        self.service.set_completed(late.id, True, MONDAY)
+        titles = [t.title for t in self.service.list_today(MONDAY)]
+        self.assertEqual(titles[0], "午间")
+        self.assertEqual(set(titles[1:]), {"早会", "晚间"})
 
     def test_completed_daily_task_stays_in_today_with_strikethrough(self):
         task = self.service.create(TaskItem(title="喝水", type=TaskType.DAILY))

@@ -113,22 +113,20 @@ class TaskService:
     def progress_today(self, day: date | None = None) -> TaskProgress:
         """计算今日完成进度。
 
-        口径说明：``total`` = 今日可见任务数 + 今天已完成因而隐藏的单次任务数；
-        ``completed`` = 完成日期为今天的任务数。这样「完成一个单次任务」时
-        分子分母同时 +1，进度条不会因为任务消失而回退。
+        口径说明：``completed`` = 完成日期为今天的任务数；
+        ``total`` = 今日可见任务数。
+
+        已完成的任务现在**仍留在今日列表里**（半透明、沉到底部），
+        因此不需要再为「已完成却被隐藏」的任务单独补一项分母——
+        早期版本会补，是因为单次任务完成后会立刻从列表消失。
         """
         target = day or timeutils.today_local()
         tasks = self._repo.list_all()
         visible = [t for t in tasks if t.is_visible_on(target)]
         completed_today = [t for t in tasks if t.last_completed_date == target]
-        hidden_completed_once = [
-            t
-            for t in completed_today
-            if t.type is TaskType.ONCE and not t.is_visible_on(target)
-        ]
         return TaskProgress(
             completed=len(completed_today),
-            total=len(visible) + len(hidden_completed_once),
+            total=len(visible),
         )
 
     # ------------------------------------------------------------------

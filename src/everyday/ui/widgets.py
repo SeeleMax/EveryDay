@@ -13,6 +13,7 @@ from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
+    QGraphicsOpacityEffect,
     QHBoxLayout,
     QLabel,
     QPushButton,
@@ -27,6 +28,9 @@ from everyday.ui import styles
 #: 直接拿它去 setFont 会让 Qt 打印
 #: ``QFont::setPointSize: Point size <= 0 (-1), must be greater than 0``
 _FALLBACK_POINT_SIZE = 10
+
+#: 已完成任务的整行不透明度（1.0 = 完全不透明）
+COMPLETED_OPACITY = 0.45
 
 
 def strikeout_font(base: QFont, strike: bool) -> QFont:
@@ -68,6 +72,13 @@ class TaskRow(QWidget):
         self._task = task
         self._compact = compact
         self._syncing = False
+        # 已完成的任务整行半透明。
+        # 效果器**只创建一次并常驻**：Qt 在 setGraphicsEffect(None) 时会
+        # 顺手 delete 掉旧的效果器，缓存引用再用就会访问已释放对象，
+        # 所以改成常驻 + 用透明度 1.0 表示「不透明」。
+        self._opacity_effect = QGraphicsOpacityEffect(self)
+        self._opacity_effect.setOpacity(1.0)
+        self.setGraphicsEffect(self._opacity_effect)
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(6 if compact else 8, 4, 6 if compact else 8, 4)
@@ -111,7 +122,7 @@ class TaskRow(QWidget):
         return self._task.id
 
     def apply_state(self, task: TaskItem, day: date) -> None:
-        """按任务当前状态刷新视觉（删除线、超期警示）。"""
+        """按任务当前状态刷新视觉（删除线、超期警示、完成项半透明）。"""
         self._task = task
         self.title_label.setFont(strikeout_font(self.title_label.font(), task.is_completed))
 
@@ -121,6 +132,9 @@ class TaskRow(QWidget):
             self.title_label.setStyleSheet(styles.DISABLED_TEXT)
         else:
             self.title_label.setStyleSheet("")
+
+        # 完成后整行淡出，配合「沉到列表最下面」表达「已处理，无需再看」
+        self._opacity_effect.setOpacity(COMPLETED_OPACITY if task.is_completed else 1.0)
 
         self.title_label.setToolTip(self._tooltip_text(task, day))
 

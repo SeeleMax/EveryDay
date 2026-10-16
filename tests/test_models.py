@@ -64,11 +64,34 @@ class TaskItemValidationTest(unittest.TestCase):
 
 
 class TaskItemVisibilityTest(unittest.TestCase):
-    def test_completed_once_task_is_hidden(self):
+    def test_completed_once_task_without_completion_date_is_hidden(self):
+        """已完成但没记完成日期的单次任务不应出现（脏数据防御）。"""
         task = TaskItem(
             title="交报告", type=TaskType.ONCE, due_date=MONDAY, is_completed=True
         )
         self.assertFalse(task.is_visible_on(MONDAY))
+
+    def test_completed_once_task_stays_visible_on_completion_day(self):
+        """完成后不再消失：完成当天仍留在列表里（半透明 + 沉底）。"""
+        task = TaskItem(
+            title="交报告",
+            type=TaskType.ONCE,
+            due_date=MONDAY,
+            is_completed=True,
+            last_completed_date=MONDAY,
+        )
+        self.assertTrue(task.is_visible_on(MONDAY))
+
+    def test_completed_once_task_hidden_after_completion_day(self):
+        """只在完成当天保留，次日不再出现。"""
+        task = TaskItem(
+            title="交报告",
+            type=TaskType.ONCE,
+            due_date=MONDAY,
+            is_completed=True,
+            last_completed_date=MONDAY,
+        )
+        self.assertFalse(task.is_visible_on(TUESDAY))
 
     def test_once_task_visible_on_due_date(self):
         task = TaskItem(title="交报告", type=TaskType.ONCE, due_date=MONDAY)
@@ -157,6 +180,26 @@ class TaskItemSortKeyTest(unittest.TestCase):
         none = TaskItem(title="无提醒", type=TaskType.DAILY)
         ordered = sorted([none, late, early], key=TaskItem.sort_key)
         self.assertEqual([t.title for t in ordered], ["早", "晚", "无提醒"])
+
+    def test_completed_tasks_sort_to_the_bottom(self):
+        """已完成的任务沉到最后，且不再按提醒时间插进未完成项之间。"""
+        done_early = TaskItem(
+            title="早上完成的",
+            type=TaskType.DAILY,
+            remind_time=time(7, 0),
+            is_completed=True,
+            last_completed_date=MONDAY,
+        )
+        pending_late = TaskItem(title="下午待办", type=TaskType.DAILY, remind_time=time(15, 0))
+        pending_none = TaskItem(title="无提醒待办", type=TaskType.DAILY)
+
+        ordered = sorted(
+            [done_early, pending_late, pending_none], key=TaskItem.sort_key
+        )
+        self.assertEqual(
+            [t.title for t in ordered],
+            ["下午待办", "无提醒待办", "早上完成的"],
+        )
 
 
 class TaskItemStorageTest(unittest.TestCase):

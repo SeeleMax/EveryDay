@@ -197,7 +197,8 @@ class MainWindowTest(UiBaseTestCase):
         finally:
             window.deleteLater()
 
-    def test_completed_once_task_disappears_from_list(self):
+    def test_completed_once_task_stays_and_fades(self):
+        """单次任务完成后不再从列表消失：变半透明并沉到底部。"""
         task = self._add_task(
             title="交报告", type=TaskType.ONCE, due_date=self.context.today()
         )
@@ -205,11 +206,40 @@ class MainWindowTest(UiBaseTestCase):
         try:
             self.assertEqual(window.task_list.count(), 1)
             row = window.task_list.itemWidget(window.task_list.item(0))
+            self.assertEqual(row._opacity_effect.opacity(), 1.0)
+
             row.checkbox.setChecked(True)
-            # 单次任务完成后隐藏，因此列表只剩占位行
-            self.assertEqual(window.task_list.count(), 1)
-            self.assertIn("今天还没有任务", window.task_list.item(0).text())
+
+            self.assertEqual(window.task_list.count(), 1, "完成后应仍在列表里")
+            faded = window.task_list.itemWidget(window.task_list.item(0))
+            self.assertEqual(faded.task_id, task.id)
+            self.assertLess(
+                faded._opacity_effect.opacity(), 1.0, "完成后整行应半透明"
+            )
+            self.assertTrue(faded.checkbox.isChecked())
             self.assertEqual(self.task_service.get(task.id).is_completed, True)
+        finally:
+            window.deleteLater()
+
+    def test_completed_task_moves_to_bottom_of_list(self):
+        """完成的任务要沉到列表最下面。"""
+        early = self._add_task(title="早会", remind_time=time(8, 0))
+        self._add_task(title="午间", remind_time=time(12, 0))
+        window = self._window()
+        try:
+            def titles():
+                return [
+                    window.task_list.itemWidget(window.task_list.item(i))._task.title
+                    for i in range(window.task_list.count())
+                ]
+
+            self.assertEqual(titles(), ["早会", "午间"])
+
+            first_row = window.task_list.itemWidget(window.task_list.item(0))
+            first_row.checkbox.setChecked(True)
+
+            self.assertEqual(titles(), ["午间", "早会"], "已完成项应沉到最后")
+            self.assertTrue(self.task_service.get(early.id).is_completed)
         finally:
             window.deleteLater()
 

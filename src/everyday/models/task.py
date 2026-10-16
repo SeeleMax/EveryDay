@@ -96,11 +96,17 @@ class TaskItem:
     # 业务规则（文档 4.2 / 5.4 / 5.5）
     # ------------------------------------------------------------------
     def is_visible_on(self, day: date) -> bool:
-        """判断该任务是否应出现在 ``day`` 这一天的今日列表中。"""
+        """判断该任务是否应出现在 ``day`` 这一天的今日列表中。
+
+        完成的任务**不再从列表里消失**，而是留在原位变半透明并沉到底部
+        （见 :meth:`sort_key` 与 ``ui.widgets.TaskRow.apply_state``）。
+        对单次任务来说，只在**完成当天**保留；次日不再出现，
+        否则历史任务会一天天堆积在列表里。
+        """
         if self.type is TaskType.ONCE:
-            # 单次任务：截止当日及之前显示；完成后立即隐藏
             if self.is_completed:
-                return False
+                return self.last_completed_date == day
+            # 未完成：截止当日及之前显示（超期的用醒目颜色提示）
             return self.due_date is not None and self.due_date <= day
         if self.type is TaskType.DAILY:
             return True
@@ -144,15 +150,22 @@ class TaskItem:
             return replace(self, is_completed=True, last_completed_date=day)
         return replace(self, is_completed=False, last_completed_date=None)
 
-    def sort_key(self) -> tuple[int, str, str]:
-        """列表排序键：先按提醒时间，再按创建时间（文档 6.1）。
+    def sort_key(self) -> tuple[int, int, str, str]:
+        """列表排序键（文档 6.1 + 完成项下沉）。
 
-        未设置提醒时间的任务排在当天所有定时任务之后。
+        顺序：
+        1. **未完成的在前，已完成的全部沉到最下面**
+        2. 其余按提醒时间——未设置提醒的排在定时任务之后
+        3. 最后按创建时间
+
+        已完成任务之间不再看提醒时间，避免「上午完成的任务」夹在
+        下午的待办之间。
         """
+        completed = 1 if self.is_completed else 0
         has_remind = 0 if self.remind_time is not None else 1
         remind = timeutils.format_time(self.remind_time) or ""
         created = timeutils.format_datetime(self.created_at) or ""
-        return (has_remind, remind, created)
+        return (completed, has_remind, remind, created)
 
     # ------------------------------------------------------------------
     # 存储映射
