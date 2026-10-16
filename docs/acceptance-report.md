@@ -201,6 +201,7 @@ SQLite 3.49.1。Qt 以 `offscreen` 平台插件运行测试，因此无需真实
 | 自检 | 构建脚本会真的把产物启动一次，日志出现「初始化完成，进入事件循环」才算通过 —— **本次通过** |
 | 数据目录 | `%LOCALAPPDATA%\EveryDay`（与源码运行一致） |
 | 构建命令 | `powershell -ExecutionPolicy Bypass -File tools\build_exe.ps1` |
+| 分发方式 | **不提交进 git**，作为附件发布在 GitHub Releases 上（避免每发一版就在历史里永久留下 81 MB）。发布命令：`tools\publish_release.ps1` |
 
 打包过程中踩到并已固化到脚本里的坑（详见
 [known-issues.md](known-issues.md) 第二节 PKG-01 ~ PKG-04）：

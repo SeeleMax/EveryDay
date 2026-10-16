@@ -54,19 +54,26 @@ python main.py
 
 ### 1.5 直接运行可执行文件（免装 Python）
 
-`release/EveryDay.exe` 是自包含的单文件程序（**81.1 MB**），双击即用，
-目标机器**不需要安装 Python 或任何依赖**：
+**可执行程序不在版本库里**，它作为附件发布在 GitHub Releases 上：
+
+**👉 [下载最新版 EveryDay.exe](https://github.com/SeeleMax/EveryDay/releases/latest)**
+
+单文件、自包含（约 81 MB），双击即用，目标机器**不需要安装 Python 或任何依赖**：
 
 ```powershell
-.\release\EveryDay.exe                 # 正常启动
-.\release\EveryDay.exe --minimized     # 只驻留托盘与悬浮窗
-.\release\EveryDay.exe --data-dir D:\everyday-data   # 换数据目录
+.\EveryDay.exe                 # 正常启动
+.\EveryDay.exe --minimized     # 只驻留托盘与悬浮窗
+.\EveryDay.exe --data-dir D:\everyday-data   # 换数据目录
 ```
 
 首次启动会把自己解包到临时目录，因此比源码运行慢 1~3 秒，之后走缓存会快一些。
 数据仍然写在 `%LOCALAPPDATA%\EveryDay`。
 
-重新打包：
+> 为什么二进制不放进仓库：81 MB 的单文件产物每发一版都会在 git 历史里
+> 永久留下一个 81 MB 对象，克隆会越来越慢。Releases 附件是仓库外的
+> 独立存储，还能带发布说明。
+
+#### 本地打包
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File tools\build_exe.ps1
@@ -83,6 +90,20 @@ powershell -ExecutionPolicy Bypass -File tools\build_exe.ps1 -Onedir -Clean
 > 产物运行时报 `ImportError: DLL load failed while importing QtCore`。
 > 这个污染**时有时无**，所以脚本同时加了产物自检来兜住。
 > 详细排查记录见 [docs/known-issues.md](docs/known-issues.md) 第二节。
+
+#### 发布到 GitHub Releases
+
+```powershell
+# 需要一个有 Contents: Read and write 权限的令牌（仅当前会话有效）
+$env:GH_TOKEN = "github_pat_xxx"
+powershell -ExecutionPolicy Bypass -File tools\publish_release.ps1
+```
+
+脚本会自动读取版本号、推送 tag、创建 Release、上传 exe（同名附件先删再传，
+方便重发同一版本）。发布说明取自 [`docs/release-notes/`](docs/release-notes/)。
+已安装并登录 `gh` CLI 时会自动回退到它。
+
+> ⚠️ token 请只放在环境变量里，**不要**写进任何会被提交的文件。
 
 ### 1.6 跑测试
 

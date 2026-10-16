@@ -8,7 +8,7 @@
 |---|---|---|---|
 | D1 | 源代码 | `src/everyday/`（+ `main.py`） | ✅ 完成 |
 | D2 | 数据库脚本 | [`migrations/001_initial.sql`](../migrations/001_initial.sql) | ✅ 完成（建表 + 10 个默认模板） |
-| D3 | 可执行程序 | `release/` | ⛔ **未产出**，原因见 [known-issues.md KI-02](known-issues.md) |
+| D3 | 可执行程序 | `release/EveryDay.exe`（本地构建）→ **发布到 [GitHub Releases](https://github.com/SeeleMax/EveryDay/releases)** | ✅ 已产出（81.1 MB，构建自检通过）。**不进版本库**，走 Releases 附件分发 |
 | D4 | 使用说明 | [`README.md`](../README.md) / [`README.en.md`](../README.en.md) | ✅ 完成（中英各一份） |
 | D5 | 配置文件示例 | [`config/appsettings.example.json`](../config/appsettings.example.json) | ✅ 完成（逐字段中文说明） |
 | 附 | 架构文档 | [`docs/architecture.md`](architecture.md) | ✅ 完成（类图 / ER 图 / 4 张时序图） |
