@@ -52,23 +52,56 @@ python main.py
 | `--log-level DEBUG` | 覆盖日志级别 |
 | `--version` | 显示版本号 |
 
-### 1.5 跑测试
+### 1.5 直接运行可执行文件（免装 Python）
+
+`release/EveryDay.exe` 是自包含的单文件程序（**81.1 MB**），双击即用，
+目标机器**不需要安装 Python 或任何依赖**：
 
 ```powershell
-python -m unittest discover -s tests -v
-# 或（需要能装上 pytest）
-pytest
+.\release\EveryDay.exe                 # 正常启动
+.\release\EveryDay.exe --minimized     # 只驻留托盘与悬浮窗
+.\release\EveryDay.exe --data-dir D:\everyday-data   # 换数据目录
 ```
 
-### 1.6 验证与自检工具
+首次启动会把自己解包到临时目录，因此比源码运行慢 1~3 秒，之后走缓存会快一些。
+数据仍然写在 `%LOCALAPPDATA%\EveryDay`。
 
-仓库自带三个零依赖的检查脚本（只用标准库 + PySide6）：
+重新打包：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File tools\build_exe.ps1
+# 启动更快的目录模式（约 168 MB）：
+powershell -ExecutionPolicy Bypass -File tools\build_exe.ps1 -Onedir -Clean
+```
+
+脚本会在打包**之前净化 PATH**、在打包**之后真的启动一次产物做自检**
+（日志出现「初始化完成，进入事件循环」才算通过）。
+
+> 为什么必须净化 PATH：PyInstaller 会顺着 PATH 收集被依赖的 DLL。
+> 开发机上若装了 PostgreSQL / Anaconda 这类自带 OpenSSL 与 ICU 的软件，
+> 它们的 DLL 会被收进产物，其中旧版 `icuuc.dll` 会抢占 Qt 的 ICU 绑定，
+> 产物运行时报 `ImportError: DLL load failed while importing QtCore`。
+> 这个污染**时有时无**，所以脚本同时加了产物自检来兜住。
+> 详细排查记录见 [docs/known-issues.md](docs/known-issues.md) 第二节。
+
+### 1.6 跑测试
+
+```powershell
+python -m pytest -q
+python -m ruff check .
+```
+
+### 1.7 验证与自检工具
+
+仓库自带几个零依赖的检查脚本（只用标准库 + PySide6）：
 
 | 命令 | 作用 |
 |---|---|
 | `python -m pytest -q` | 236 项单元测试 + UI 冒烟 + 端到端启动集成 |
 | `python tools/coverage_report.py` | 覆盖率备选方案（基于标准库 `trace`，无需 `pytest-cov`） |
 | `python tools/smoke_startup.py` | 真实启动一次应用并核对落盘产物，可加 `--minimized` / `--data-dir` |
+| `python tools/make_icon.py` | 用界面图标生成 exe 用的 `.ico`（构建时调用） |
+| `powershell -File tools\build_exe.ps1` | 打包 + 产物自检 |
 
 当前实测结果（`pytest` 9.1.1 + `pytest-cov` 7.1.0 + `ruff` 0.17.0）：
 

@@ -4,7 +4,8 @@
 > 最后更新：v1.0.0 验证完成后。
 
 **当前验证状态**：`pytest` 236 项通过 + 2 项平台跳过；核心服务覆盖率 85%（`pytest-cov`）；
-`ruff check` 0 警告；端到端启动/退出冒烟 12/12 与 14/14 通过；已在真实窗口下成功启动。
+`ruff check` 0 警告；端到端启动/退出冒烟 12/12 与 14/14 通过；已在真实窗口下成功启动；
+自包含可执行程序 `release/EveryDay.exe`（81.1 MB）已产出并通过构建自检。
 详见 [acceptance-report.md](acceptance-report.md)。
 
 ---
@@ -71,6 +72,49 @@
 | 修复 | 所有 `font-size` 改用 `pt`（对 DPI 缩放与用户的「字体大小」辅助功能设置也更正确）；`widgets.strikeout_font()` 对点数做兜底校验 |
 | 验证 | 修复后真实窗口启动的 stderr **完全干净，无任何 Qt 警告** |
 | 回归测试 | `test_ui_smoke.py::StrikeoutFontTest`（3 项） |
+
+---
+
+### 打包（PyInstaller）踩到的坑 —— PKG-01 ~ PKG-04
+
+这四个不是产品缺陷，而是「打包成功 ≠ 能运行」的典型来源。
+四个都已固化进 `tools/build_exe.ps1`，改脚本前请先读。
+
+#### PKG-01 PATH 污染导致 Qt 起不来（最隐蔽，时有时无）
+
+| 项目 | 说明 |
+|---|---|
+| 现象 | 产物启动时 `ImportError: DLL load failed while importing QtCore: 找不到指定的程序`（`ERROR_PROC_NOT_FOUND`）。日志里迁移、配置播种都正常，只有 Qt 加载失败 |
+| 根因 | PyInstaller 会**顺着 PATH** 收集被依赖的 DLL。开发机上装了 PostgreSQL / Anaconda 之类自带 OpenSSL 与 ICU 的软件时，会把 `LIBPQ.dll`、`libcrypto-3-x64.dll`、`libssl-3-x64.dll`、`icudt73.dll`、`icuuc.dll`、`krb5_64.dll`、`gssapi64.dll`、`comerr64.dll` 一并收进产物。其中**旧版 `icuuc.dll` 抢占了 Qt 的 ICU 绑定**，导致符号对不上 |
+| 为什么难查 | 同一个命令两次构建，一次产出 81 MB（可用）、一次 97 MB（不可用）——仅仅因为 PATH 扫描的结果不同。先后排除了「Qt 模块排除项」「VC 运行时版本混用」等假设都不成立 |
+| 定位手段 | 用 `pyi-archive_viewer -l` 列出两个产物的**文件名集合**做差集，一眼看到失败版多出那 8 个 DLL |
+| 修复 | 构建前把 PATH 净化为「系统目录 + venv」。见 `build_exe.ps1` 里的 `$buildPath` |
+| 附带教训 | PyInstaller **没有 `--exclude-binary`**（只有 `--exclude-module` 与 `--upx-exclude`），所以只能从环境入手 |
+
+#### PKG-02 PyInstaller 的 PySide6 钩子漏收文件
+
+| 项目 | 说明 |
+|---|---|
+| 现象 | 同上那个 QtCore DLL 错误，但与环境无关、稳定复现 |
+| 根因 | PyInstaller 6.22.3 自带的 PySide6 钩子没有把必需的文件全部收进去 |
+| 修复 | 显式加 `--collect-binaries PySide6 --collect-data PySide6`。注意**单文件模式两个都要**：只用 `--collect-binaries` 时目录模式可用、单文件模式仍失败 |
+| 体积取舍 | 只加 `--collect-binaries` 时目录模式 168 MB；两个都加时 217 MB / 单文件 97 MB。加上 `--collect-data` 会捎带 QML、翻译等用不到的东西，但为了单文件可用只能接受 |
+
+#### PKG-03 src 布局导致 PyInstaller 找不到本项目代码
+
+| 项目 | 说明 |
+|---|---|
+| 现象 | 产物只有 **7.9 MB**（正常 81 MB），运行后静默退出、退出码 -1，连日志都没有 |
+| 根因 | 本项目是 src 布局，`main.py` 只在**运行时**把 `src` 插进 `sys.path`；PyInstaller 的静态分析不执行那段代码，于是找不到 `everyday` 包，也就连带不会打包 PySide6 |
+| 修复 | 显式加 `--paths src`。日志里会打印分析搜索路径，可据此确认 |
+
+#### PKG-04 打包成功 ≠ 能运行
+
+| 项目 | 说明 |
+|---|---|
+| 现象 | PyInstaller 退出码 0、产物体积也正常，但一运行就崩；而 `--noconsole` 把错误全咽了，只能靠日志文件反查 |
+| 修复 | `build_exe.ps1` 在打包后会**真的把产物启动一次**（`--data-dir` 指向临时目录），等日志出现「初始化完成，进入事件循环」才算通过，否则打印日志尾部并让脚本失败 |
+| 教训 | 上面 PKG-01 之所以折腾很久，就是因为没有这一步。**先让工具自证，再谈交付** |
 
 ---
 

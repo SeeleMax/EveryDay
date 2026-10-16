@@ -188,27 +188,37 @@ SQLite 3.49.1。Qt 以 `offscreen` 平台插件运行测试，因此无需真实
 | A8 | 连续运行 24 小时 | 无崩溃；日志无 ERROR |
 | 内存 | 任务管理器观测 30 分钟 | 常驻 < 50MB |
 | 多屏 DPI | 150% 缩放副屏 | 悬浮窗字体清晰不模糊 |
-| 打包 | 见下 | 干净 Windows 11 上双击可运行 |
+| 打包 | 验证 `release/EveryDay.exe` 在干净 Windows 11 上双击可运行 | 正常启动并驻留托盘 |
 
-### 5.1 关于交付物 D3（自包含可执行程序）
+### 5.1 关于交付物 D3（自包含可执行程序）—— 已产出
 
-**未产出。** 原因：验证所用的 venv 已能安装依赖，但 PyInstaller 未安装，且
-打包本身需要在干净环境验证。经确认，本机**官方 Python 3.13 的 pip 完全正常**
-（此前「pip 完全不可用」的结论是错的——只有 Anaconda 那条链路坏了）。
+**已产出并通过自检**：`release/EveryDay.exe`，**单文件 81.1 MB**。
 
-在你的环境里执行：
+| 项目 | 结果 |
+|---|---|
+| 形态 | 单文件（`--onefile`），自包含，双击即用 |
+| 体积 | 81.1 MB（GitHub 单文件上限 100 MB） |
+| 自检 | 构建脚本会真的把产物启动一次，日志出现「初始化完成，进入事件循环」才算通过 —— **本次通过** |
+| 数据目录 | `%LOCALAPPDATA%\EveryDay`（与源码运行一致） |
+| 构建命令 | `powershell -ExecutionPolicy Bypass -File tools\build_exe.ps1` |
 
-```powershell
-pip install -r requirements-dev.txt
-pip install pyinstaller
-pyinstaller --noconsole --name EveryDay --collect-all PySide6 ^
-            --add-data "migrations;migrations" ^
-            --add-data "config;config" ^
-            main.py
-```
+打包过程中踩到并已固化到脚本里的坑（详见
+[known-issues.md](known-issues.md) 第二节 PKG-01 ~ PKG-04）：
 
-`everyday/paths.py` 已按 `sys.frozen` 处理打包后的路径分支，并会在
-`migrations/` 缺失时回落到包内副本。
+1. **PATH 污染**（最隐蔽）：PyInstaller 会顺着 PATH 收集被依赖的 DLL，开发机上
+   PostgreSQL / Anaconda 自带的 `LIBPQ.dll`、`libcrypto-3-x64.dll`、`icudt73.dll`、
+   `icuuc.dll` 等会被一起收进产物，其中旧版 `icuuc.dll` 抢占 Qt 的 ICU 绑定，
+   运行时直接 `ImportError: DLL load failed while importing QtCore`。
+   而且**时有时无**（同一个命令两次构建，一次 81 MB 可用、一次 97 MB 不可用）。
+   修法：构建前净化 PATH。
+2. **PyInstaller 的 PySide6 钩子漏收文件**：必须显式
+   `--collect-binaries PySide6 --collect-data PySide6`（单文件模式两个都要）。
+3. **src 布局**：必须 `--paths src`，否则找不到 `everyday` 包，产物只有 7.9 MB 且静默退出。
+4. **打包成功 ≠ 能运行**：所以加了产物自检。这一步本可以省掉前面所有的排查时间。
+
+> 目录模式（`-Onedir`，约 168 MB，启动更快）也验证可用。
+> 跨机器分发时若目标机缺少对应版本的 VC++ 运行时，建议要求安装
+> Microsoft Visual C++ 2015-2022 Redistributable（x64）。
 
 ### 5.2 覆盖率复现命令
 
@@ -244,8 +254,9 @@ pyinstaller --noconsole --name EveryDay --collect-all PySide6 ^
 | 质量指标（测试通过率 / 覆盖率 / 启动时间） | ✅ 达标（覆盖率 86.2% ≥ 60%） |
 | 质量指标（内存 / 24 小时稳定性） | ⏳ 待人工观测 |
 | 交付物 D1 / D2 / D4 / D5 | ✅ 完成 |
-| 交付物 D3（自包含可执行程序） | ⛔ 未产出（pip 不可用，非代码问题） |
+| 交付物 D3（自包含可执行程序） | ✅ 已产出：`release/EveryDay.exe`（81.1 MB），构建时自检通过 |
 | 真实桌面交互验收 | ⏳ 待人工 |
 
 **判定**：代码层面**自动化验收通过**；`A1 / A2 / A8` 与内存、
-多屏 DPI、打包属于**必须由人在真机上完成**的项目，已在 §5 列出具体步骤与期望结果。
+多屏 DPI 属于**必须由人在真机上完成**的项目，已在 §5 列出具体步骤与期望结果；
+打包产物已在本机完成构建与启动自检，仍需在干净机器上复核。

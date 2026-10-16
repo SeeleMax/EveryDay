@@ -136,6 +136,10 @@
 
 ### Added
 
+- **交付物 D3：自包含单文件可执行程序** `release/EveryDay.exe`（81.1 MB）。
+  新增 `tools/build_exe.ps1`（打包 + 产物自检）与 `tools/make_icon.py`
+  （现场生成 exe 图标，仓库里仍不存二进制）。
+  打包后 `everyday.paths` 会在 `sys._MEIPASS` 中定位 `migrations/` 与 `config/`。
 - `paths.resolve_data_dir()`：只解析数据目录路径、不产生副作用。
 - `app._report_fatal_startup_error()` / `_show_native_error_dialog()`：
   启动期致命错误的人类可读提示（不依赖 Qt，`_ctypes` 不可用时也会降级）。
