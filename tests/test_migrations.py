@@ -70,7 +70,8 @@ class MigrationRunnerTest(DatabaseTestCase):
             self.assertEqual(len(row["checksum"]), 64)  # SHA-256 十六进制长度
 
     def test_current_version_reports_latest(self):
-        self.assertEqual(MigrationRunner(self.db).current_version(), "001")
+        # v1.1 加入了迁移 002，这里跟随最新的迁移号
+        self.assertEqual(MigrationRunner(self.db).current_version(), "002")
 
     def test_presets_are_not_duplicated_by_second_run(self):
         before = self.presets.count()

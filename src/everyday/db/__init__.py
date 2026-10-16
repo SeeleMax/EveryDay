@@ -10,8 +10,23 @@
 from __future__ import annotations
 
 from everyday.db.connection import MEMORY, Database, open_database
-from everyday.db.migrations import Migration, MigrationRunner, discover_migrations
-from everyday.db.repositories import PresetRepository, SettingsRepository, TaskRepository
+from everyday.db.migrations import (
+    Migration,
+    MigrationRunner,
+    discover_migrations,
+    split_statements,
+)
+from everyday.db.repositories import (
+    DependencyRepository,
+    FocusRepository,
+    HistoryRepository,
+    PresetRepository,
+    ReminderRepository,
+    ScreenTimeRepository,
+    SettingsRepository,
+    TagRepository,
+    TaskRepository,
+)
 
 __all__ = [
     "Database",
@@ -20,7 +35,15 @@ __all__ = [
     "Migration",
     "MigrationRunner",
     "discover_migrations",
+    "split_statements",
     "TaskRepository",
     "PresetRepository",
     "SettingsRepository",
+    # v1.1
+    "TagRepository",
+    "DependencyRepository",
+    "HistoryRepository",
+    "FocusRepository",
+    "ScreenTimeRepository",
+    "ReminderRepository",
 ]

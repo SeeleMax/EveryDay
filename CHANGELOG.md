@@ -5,6 +5,34 @@
 
 ## [Unreleased]
 
+### Added（v1.1 P1：数据模型与基础设施）
+
+- **迁移 002**（`migrations/002_v11.sql`）：v1.1 的全部 Schema 变更
+  - `task_item` 新增 `priority` / `parent_task_id` / `deleted_at` 三列
+  - 新增六张表：`task_tag`（标签）、`task_dependency`（前置依赖）、
+    `task_history`（事件流水）、`focus_record`（专注）、
+    `screen_time_record`（屏幕时间聚合）、`reminder_log`（提醒与稍后提醒）
+  - 番茄钟时长、通知开关等新配置项放进既有的 `app_settings` 键值表，
+    **不需要迁移**
+- **实体**：`TaskPriority` 枚举；`HistoryEntry` / `FocusRecord` /
+  `ScreenTimeRecord` / `ReminderLog` 四个新模型；`TaskItem` 增加
+  `is_deleted` / `deleted()` / `restored()`
+- **仓储**：`TagRepository`、`DependencyRepository`、`HistoryRepository`、
+  `FocusRepository`、`ScreenTimeRepository`、`ReminderRepository`
+- **任务仓储**：`soft_delete` / `restore` / `list_deleted` / `purge_deleted` /
+  `list_children`；`list_all` 与 `count` 默认排除回收站内容
+- **ADR-0002**（`docs/adr/0002-v11-schema.md`）：记录反推出来的表结构、
+  设计取舍、被否决的方案与 7 个待确认问题
+
+### Changed（v1.1 P1）
+
+- **迁移执行器改为逐语句执行，真正幂等**。SQLite 的
+  `ALTER TABLE ADD COLUMN` 与 `CREATE INDEX` 都没有 `IF NOT EXISTS`，
+  原来用 `executescript` 一把执行，只要有一条重复就中断、后续语句全丢。
+  现在按语句切分（`sqlite3.complete_statement`，字符串里的分号不会被误切），
+  并把「对象已存在」类错误视为已生效跳过；DDL 与账本写入同事务。
+  顺带修掉「只有注释的片段会被当成语句执行」的缺陷。
+
 ### Changed
 
 - **完成的任务不再从今日列表消失，改为整行半透明并沉到列表最下面。**

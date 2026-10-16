@@ -57,11 +57,62 @@ _TYPE_LABELS: dict[TaskType, str] = {
 }
 
 
+class TaskPriority(int, Enum):
+    """任务优先级（v1.1 P2）。
+
+    数值**越小越优先**（0 最紧急），因此 ``ORDER BY priority`` 天然就是
+    「重要的排在前面」，排序时不必再倒序处理。
+    """
+
+    URGENT = 0
+    HIGH = 1
+    NORMAL = 2
+    LOW = 3
+
+    @property
+    def label(self) -> str:
+        """面向界面的中文名称。"""
+        return _PRIORITY_LABELS[self]
+
+    @classmethod
+    def from_value(cls, value: object) -> TaskPriority:
+        """宽松解析：接受枚举、``0``~``3`` 的数字或字符串、中文名称。
+
+        无法识别时回落到「普通」——优先级只是装饰，不该因脏数据报错。
+        """
+        if isinstance(value, TaskPriority):
+            return value
+        if isinstance(value, int):
+            try:
+                return cls(value)
+            except ValueError:
+                return cls.NORMAL
+        text = str(value or "").strip()
+        for member in cls:
+            if text == member.label or text == str(member.value):
+                return member
+        return cls.NORMAL
+
+
+_PRIORITY_LABELS: dict[TaskPriority, str] = {
+    TaskPriority.URGENT: "紧急",
+    TaskPriority.HIGH: "高",
+    TaskPriority.NORMAL: "普通",
+    TaskPriority.LOW: "低",
+}
+
+
 @dataclass
 class TaskItem:
-    """一条任务（文档 4.1 TaskItem 实体）。
+    """一条任务（文档 4.1 TaskItem 实体 + v1.1 扩展）。
 
-    字段与文档表格一一对应。``id`` 为 ``None`` 表示尚未落库。
+    字段与文档表格一一对应；v1.1（迁移 002）追加了三个字段：
+
+    * ``priority``       优先级，见 :class:`TaskPriority`
+    * ``parent_task_id`` 子任务指向父任务；``None`` 表示顶层任务
+    * ``deleted_at``     软删除时间戳（回收站）；``None`` 表示未删除
+
+    ``id`` 为 ``None`` 表示尚未落库。
     """
 
     title: str
@@ -73,6 +124,10 @@ class TaskItem:
     last_completed_date: date | None = None
     created_at: datetime | None = None
     id: int | None = None
+    # ---- v1.1 新增 ----
+    priority: TaskPriority = TaskPriority.NORMAL
+    parent_task_id: int | None = None
+    deleted_at: datetime | None = None
 
     def __post_init__(self) -> None:
         self.title = (self.title or "").strip()
@@ -81,10 +136,15 @@ class TaskItem:
         if len(self.title) > MAX_TITLE_LENGTH:
             raise ValueError(f"任务标题不能超过 {MAX_TITLE_LENGTH} 个字符")
         self.type = TaskType.from_value(self.type)
+        self.priority = TaskPriority.from_value(self.priority)
         if self.description is not None:
             self.description = self.description.strip() or None
         if self.created_at is None:
             self.created_at = timeutils.now_local()
+        # 不能把自己当作父任务
+        if self.parent_task_id is not None and self.id is not None:
+            if self.parent_task_id == self.id:
+                raise ValueError("任务不能作为自己的父任务")
         # 单次任务必须设置截止日期（文档 5.3 校验规则）
         if self.type is TaskType.ONCE and self.due_date is None:
             raise ValueError("单次任务必须设置截止日期")
@@ -181,6 +241,10 @@ class TaskItem:
             "is_completed": 1 if self.is_completed else 0,
             "last_completed_date": timeutils.format_date(self.last_completed_date),
             "created_at": timeutils.format_datetime(self.created_at),
+            # ---- v1.1 ----
+            "priority": int(self.priority),
+            "parent_task_id": self.parent_task_id,
+            "deleted_at": timeutils.format_datetime(self.deleted_at),
         }
 
     @classmethod
@@ -200,8 +264,33 @@ class TaskItem:
         item.is_completed = bool(row["is_completed"])
         item.last_completed_date = timeutils.parse_date(row["last_completed_date"])
         item.created_at = timeutils.parse_datetime(row["created_at"]) or timeutils.now_local()
+        # v1.1 字段用 keys() 探测：迁移 002 之前的旧库快照或测试假行里可能没有，
+        # 缺失时按默认值处理，避免为了兼容而写一堆 try/except。
+        keys = row.keys() if hasattr(row, "keys") else ()
+        item.priority = (
+            TaskPriority.from_value(row["priority"])
+            if "priority" in keys
+            else TaskPriority.NORMAL
+        )
+        item.parent_task_id = row["parent_task_id"] if "parent_task_id" in keys else None
+        item.deleted_at = (
+            timeutils.parse_datetime(row["deleted_at"]) if "deleted_at" in keys else None
+        )
         return item
 
     def clone(self) -> TaskItem:
         """深拷贝一份（``replace`` 只做浅拷贝，但字段都是不可变类型）。"""
         return replace(self)
+
+    @property
+    def is_deleted(self) -> bool:
+        """是否已被软删除（在回收站里）。"""
+        return self.deleted_at is not None
+
+    def deleted(self, moment: datetime | None = None) -> TaskItem:
+        """返回「已软删除」的副本（P4 回收站）。"""
+        return replace(self, deleted_at=moment or timeutils.now_local())
+
+    def restored(self) -> TaskItem:
+        """返回「已恢复」的副本（撤销删除）。"""
+        return replace(self, deleted_at=None)
