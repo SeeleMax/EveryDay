@@ -43,9 +43,17 @@ out/
 
 # ---- 打包产物 ----
 *.spec
-release/
+# 注意用 release/* 而不是 release/：
+# 忽略整个目录时 git 不会进入该目录，后面的 ! 例外也就永远不会生效。
+release/*
 *.zip
 *.exe
+
+# 例外：交付用的自包含可执行程序随仓库一起分发，方便直接从 GitHub 下载运行。
+# 这是**有意为之**，不是误提交。约 81 MB。
+# 代价：每次重新打包都会在 git 历史里留下一个新的 81 MB 对象。
+# 若将来要频繁发布，建议改为在 GitHub Releases 里挂附件，而不是继续提交二进制。
+!release/EveryDay.exe
 
 # ---- 运行期数据（绝不入库）----
 # 数据库、备份、日志都写在 %LOCALAPPDATA%\EveryDay 下，
