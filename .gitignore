@@ -42,18 +42,15 @@ out/
 .vscode/
 
 # ---- 打包产物 ----
+# 可执行程序**不进版本库**，改由 GitHub Releases 分发：
+#   1) 一次性：把 exe 拖进 GitHub 的 "Draft a new release" 页面
+#   2) 或者用脚本：powershell -File tools\publish_release.ps1 -Tag v1.0.0
+# 原因：单文件产物 81 MB，每发一版就在 git 历史里永久留下一个 81 MB 对象，
+# 克隆会越来越慢；而 Releases 附件是仓库外的独立存储，还能配发布说明。
 *.spec
-# 注意用 release/* 而不是 release/：
-# 忽略整个目录时 git 不会进入该目录，后面的 ! 例外也就永远不会生效。
-release/*
+release/
 *.zip
 *.exe
-
-# 例外：交付用的自包含可执行程序随仓库一起分发，方便直接从 GitHub 下载运行。
-# 这是**有意为之**，不是误提交。约 81 MB。
-# 代价：每次重新打包都会在 git 历史里留下一个新的 81 MB 对象。
-# 若将来要频繁发布，建议改为在 GitHub Releases 里挂附件，而不是继续提交二进制。
-!release/EveryDay.exe
 
 # ---- 运行期数据（绝不入库）----
 # 数据库、备份、日志都写在 %LOCALAPPDATA%\EveryDay 下，
