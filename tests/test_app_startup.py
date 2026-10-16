@@ -300,6 +300,58 @@ class DataDirectoryResolutionTest(unittest.TestCase):
         with self.assertRaises(OSError):
             paths.data_dir(str(blocker / "sub"))
 
+    def test_project_root_finds_bundled_resources_for_frozen_builds(self):
+        """打包后必须能在 ``sys._MEIPASS`` 里找到 ``migrations/``。
+
+        回归背景：``--onefile`` 模式下 ``--add-data`` 附带的数据被解包到
+        ``sys._MEIPASS`` 临时目录，而不是 exe 旁边。早期实现只看
+        ``sys.executable`` 的父目录，于是打包后找不到迁移脚本、数据库建不起来。
+        """
+        import sys
+
+        from everyday import paths
+
+        bundled = Path(self._tmp.name) / "_MEI12345"
+        (bundled / "migrations").mkdir(parents=True)
+
+        original_frozen = getattr(sys, "frozen", None)
+        original_meipass = getattr(sys, "_MEIPASS", None)
+        try:
+            sys.frozen = True  # type: ignore[attr-defined]
+            sys._MEIPASS = str(bundled)  # type: ignore[attr-defined]
+            self.assertEqual(paths.project_root(), bundled)
+            self.assertEqual(paths.migrations_dir(), bundled / "migrations")
+        finally:
+            if original_frozen is None:
+                del sys.frozen  # type: ignore[attr-defined]
+            else:
+                sys.frozen = original_frozen  # type: ignore[attr-defined]
+            if original_meipass is None:
+                del sys._MEIPASS  # type: ignore[attr-defined]
+            else:
+                sys._MEIPASS = original_meipass  # type: ignore[attr-defined]
+
+    def test_project_root_falls_back_to_executable_dir_when_no_bundle(self):
+        """目录模式（``--onedir``）或没有 _MEIPASS 时应落在 exe 所在目录。"""
+        import sys
+
+        from everyday import paths
+
+        original_frozen = getattr(sys, "frozen", None)
+        original_meipass = getattr(sys, "_MEIPASS", None)
+        try:
+            sys.frozen = True  # type: ignore[attr-defined]
+            if original_meipass is not None:
+                del sys._MEIPASS  # type: ignore[attr-defined]
+            self.assertEqual(paths.project_root(), Path(sys.executable).resolve().parent)
+        finally:
+            if original_frozen is None:
+                del sys.frozen  # type: ignore[attr-defined]
+            else:
+                sys.frozen = original_frozen  # type: ignore[attr-defined]
+            if original_meipass is not None:
+                sys._MEIPASS = original_meipass  # type: ignore[attr-defined]
+
     def test_unwritable_data_dir_reports_clear_error_and_exits_2(self):
         """数据目录建不出来时必须给出可读提示并以 2 退出，而不是抛裸异常。
 

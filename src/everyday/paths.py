@@ -33,12 +33,21 @@ _CONFIG_FILENAME = "appsettings.json"
 
 
 def project_root() -> Path:
-    """返回仓库根目录（含 ``migrations`` / ``config`` 的那一层）。
+    """返回「随程序分发的那一份资源」所在目录（含 ``migrations`` / ``config``）。
 
-    兼容三种运行形态：源码运行（``main.py`` 在根目录）、
-    ``pip install -e .`` 后的包导入、以及被 PyInstaller 打包后的可执行文件。
+    兼容三种运行形态：
+
+    * **源码运行**（``main.py`` 在仓库根目录）→ 仓库根目录
+    * **PyInstaller 单文件模式**（``--onefile``）→ ``sys._MEIPASS``。
+      ``--add-data`` 附带的数据会被解包到那个临时目录，而**不是** exe 旁边；
+      早期实现只看 ``sys.executable`` 的父目录，于是打包后找不到
+      ``migrations/001_initial.sql``，启动时数据库建不起来。
+    * **PyInstaller 目录模式**（``--onedir``）或其它打包器 → exe 所在目录
     """
-    if getattr(sys, "frozen", False):  # PyInstaller 等打包产物
+    if getattr(sys, "frozen", False):  # 打包产物
+        bundled = getattr(sys, "_MEIPASS", None)
+        if bundled and (Path(bundled) / "migrations").is_dir():
+            return Path(bundled)
         return Path(sys.executable).resolve().parent
     # __file__ = <repo>/src/everyday/paths.py -> parents[2] = <repo>
     return Path(__file__).resolve().parents[2]
