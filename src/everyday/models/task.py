@@ -8,7 +8,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, time
 from enum import Enum
 from typing import Any
@@ -129,6 +129,16 @@ class TaskItem:
     parent_task_id: int | None = None
     deleted_at: datetime | None = None
 
+    # ---- 以下字段【不持久化】，由服务层查询后填充，供界面展示 ----
+    #: 标签（P2），按字母序
+    tags: tuple[str, ...] = field(default=(), compare=False, repr=False)
+    #: 子任务总数（P2），0 表示没有子任务
+    child_total: int = field(default=0, compare=False, repr=False)
+    #: 子任务中已完成的数量
+    child_completed: int = field(default=0, compare=False, repr=False)
+    #: 尚未完成的前置任务 id（P2），非空表示被阻塞
+    blocked_by: tuple[int, ...] = field(default=(), compare=False, repr=False)
+
     def __post_init__(self) -> None:
         self.title = (self.title or "").strip()
         if not self.title:
@@ -210,22 +220,24 @@ class TaskItem:
             return replace(self, is_completed=True, last_completed_date=day)
         return replace(self, is_completed=False, last_completed_date=None)
 
-    def sort_key(self) -> tuple[int, int, str, str]:
-        """列表排序键（文档 6.1 + 完成项下沉）。
+    def sort_key(self) -> tuple[int, int, int, str, str]:
+        """列表排序键（v1.1 P2：优先级置顶 + 完成项下沉）。
 
         顺序：
         1. **未完成的在前，已完成的全部沉到最下面**
-        2. 其余按提醒时间——未设置提醒的排在定时任务之后
-        3. 最后按创建时间
+        2. **优先级高的在前**（``TaskPriority`` 数值越小越优先）
+        3. 其余按提醒时间——未设置提醒的排在定时任务之后
+        4. 最后按创建时间
 
-        已完成任务之间不再看提醒时间，避免「上午完成的任务」夹在
-        下午的待办之间。
+        已完成项之间不再比较优先级与提醒时间，避免「上午完成的紧急任务」
+        夹在下午的待办之间。
         """
         completed = 1 if self.is_completed else 0
+        priority = int(self.priority)
         has_remind = 0 if self.remind_time is not None else 1
         remind = timeutils.format_time(self.remind_time) or ""
         created = timeutils.format_datetime(self.created_at) or ""
-        return (completed, has_remind, remind, created)
+        return (completed, priority, has_remind, remind, created)
 
     # ------------------------------------------------------------------
     # 存储映射
@@ -294,3 +306,23 @@ class TaskItem:
     def restored(self) -> TaskItem:
         """返回「已恢复」的副本（撤销删除）。"""
         return replace(self, deleted_at=None)
+
+    # ------------------------------------------------------------------
+    # v1.1 P2：子任务进度与依赖阻塞
+    # ------------------------------------------------------------------
+    @property
+    def has_children(self) -> bool:
+        """是否有子任务。"""
+        return self.child_total > 0
+
+    @property
+    def child_progress_label(self) -> str:
+        """子任务进度文本，形如 ``2/5``；没有子任务时返回空串。"""
+        if self.child_total <= 0:
+            return ""
+        return f"{self.child_completed}/{self.child_total}"
+
+    @property
+    def is_blocked(self) -> bool:
+        """是否被未完成的前置任务阻塞（阻塞时勾选框置灰）。"""
+        return bool(self.blocked_by)

@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 
 from everyday import APP_DISPLAY_NAME, __version__, paths
 from everyday.models.task import TaskItem, TaskType
+from everyday.services.dependency_service import DependencyCycleError
 from everyday.ui import icons
 from everyday.ui.context import AppContext
 from everyday.ui.preset_dialog import PresetDialog
@@ -244,12 +245,20 @@ class MainWindow(QMainWindow):
     # ==================================================================
     def create_task(self) -> None:
         """新建任务。"""
-        dialog = TaskDialog(self, default_date=self._context.today())
+        dialog = TaskDialog(self, default_date=self._context.today(), service=self._context.task_service)
         if dialog.exec() != TaskDialog.Accepted:
             return
         try:
             task = dialog.result_task()
-            self._context.task_service.create(task)
+            # v1.1 P2：标签与前置依赖一并写入
+            self._context.task_service.save_with_details(
+                task,
+                tags=dialog.selected_tags(),
+                depends_on=dialog.selected_dependencies(),
+            )
+        except DependencyCycleError as exc:
+            QMessageBox.warning(self, "依赖冲突", str(exc))
+            return
         except ValueError as exc:
             QMessageBox.warning(self, "无法保存", str(exc))
             return
@@ -271,12 +280,19 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "无法创建", "模板已不存在，请刷新后重试。")
             return
 
-        dialog = TaskDialog(self, task=draft)
+        dialog = TaskDialog(self, task=draft, service=self._context.task_service)
         if dialog.exec() != TaskDialog.Accepted:
             return
         try:
             task = dialog.result_task(draft)
-            self._context.task_service.create(task)
+            self._context.task_service.save_with_details(
+                task,
+                tags=dialog.selected_tags(),
+                depends_on=dialog.selected_dependencies(),
+            )
+        except DependencyCycleError as exc:
+            QMessageBox.warning(self, "依赖冲突", str(exc))
+            return
         except ValueError as exc:
             QMessageBox.warning(self, "无法保存", str(exc))
             return
@@ -290,12 +306,20 @@ class MainWindow(QMainWindow):
             self.refresh_tasks()
             return
 
-        dialog = TaskDialog(self, task=task)
+        dialog = TaskDialog(self, task=task, service=self._context.task_service)
         if dialog.exec() != TaskDialog.Accepted:
             return
         try:
             dialog.result_task(task)
-            self._context.task_service.update(task)
+            # v1.1 P2：标签与前置依赖一并保存
+            self._context.task_service.save_with_details(
+                task,
+                tags=dialog.selected_tags(),
+                depends_on=dialog.selected_dependencies(),
+            )
+        except DependencyCycleError as exc:
+            QMessageBox.warning(self, "依赖冲突", str(exc))
+            return
         except ValueError as exc:
             QMessageBox.warning(self, "无法保存", str(exc))
             return

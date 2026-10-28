@@ -15,10 +15,17 @@ from pathlib import Path
 
 from everyday import APP_NAME, __version__, exceptions, paths
 from everyday.db import Database, MigrationRunner
-from everyday.db.repositories import PresetRepository, SettingsRepository, TaskRepository
+from everyday.db.repositories import (
+    DependencyRepository,
+    PresetRepository,
+    SettingsRepository,
+    TagRepository,
+    TaskRepository,
+)
 from everyday.logging_setup import setup_logging
 from everyday.services.backup_service import BackupService
 from everyday.services.calendar_service import CalendarService
+from everyday.services.dependency_service import DependencyService
 from everyday.services.preset_service import PresetService
 from everyday.services.settings_service import SettingsService
 from everyday.services.startup_service import StartupService
@@ -112,7 +119,16 @@ class Application:
         MigrationRunner(self._database).run()
 
         # 3) 服务
-        task_service = TaskService(TaskRepository(self._database))
+        # v1.1 P2：标签与依赖需要各自的仓储，依赖服务还要读任务表来判断阻塞
+        task_repository = TaskRepository(self._database)
+        dependency_service = DependencyService(
+            DependencyRepository(self._database), task_repository
+        )
+        task_service = TaskService(
+            task_repository,
+            tags=TagRepository(self._database),
+            dependencies=dependency_service,
+        )
         preset_service = PresetService(PresetRepository(self._database))
         settings_repo = SettingsRepository(self._database)
         self._settings_service = SettingsService(settings_repo)

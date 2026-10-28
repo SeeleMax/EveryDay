@@ -22,6 +22,7 @@ TEXT_PRIMARY = "#1F2328"
 TEXT_SECONDARY = "#6E7781"
 BORDER = "#E3E6EA"
 SURFACE = "#FFFFFF"
+SURFACE_ALT = "#F2F4F7"
 BACKGROUND = "#F6F7F9"
 
 #: 悬浮窗背景（半透明）
@@ -103,6 +104,23 @@ QLabel#sectionTitle {{
 }}
 QLabel#hint {{
     color: {TEXT_SECONDARY};
+    font-size: 9pt;
+}}
+QLabel#priorityBadge {{
+    font-size: 9pt;
+}}
+QLabel#tagChip {{
+    color: {PRIMARY};
+    background: {SURFACE_ALT};
+    border-radius: 6px;
+    padding: 1px 6px;
+    font-size: 9pt;
+}}
+QLabel#blockedHint {{
+    color: {TEXT_SECONDARY};
+    background: {SURFACE_ALT};
+    border-radius: 6px;
+    padding: 1px 6px;
     font-size: 9pt;
 }}
 QLabel#eventTime {{

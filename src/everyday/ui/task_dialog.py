@@ -19,6 +19,8 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QListWidget,
+    QListWidgetItem,
     QMessageBox,
     QTextEdit,
     QTimeEdit,
@@ -26,7 +28,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from everyday.models.task import MAX_TITLE_LENGTH, TaskItem, TaskType
+from everyday.models.task import MAX_TITLE_LENGTH, TaskItem, TaskPriority, TaskType
 from everyday.services.task_service import TaskService
 
 #: 默认提醒时间
@@ -42,9 +44,13 @@ class TaskDialog(QDialog):
         *,
         task: TaskItem | None = None,
         default_date: date | None = None,
+        service: TaskService | None = None,
     ) -> None:
         super().__init__(parent)
         self._editing = task is not None
+        #: v1.1 P2：用于取标签、父任务候选与前置依赖候选。
+        #: 为 ``None`` 时 P2 的那几个字段留空（单元测试可以不传）。
+        self._service = service
         self.setWindowTitle("编辑任务" if self._editing else "新建任务")
         self.setModal(True)
         self.setMinimumWidth(420)
@@ -100,10 +106,28 @@ class TaskDialog(QDialog):
         remind_container.setLayout(remind_row)
         form.addRow("提醒时间", remind_container)
 
+        # ---- v1.1 P2：优先级 / 标签 / 父任务 / 前置依赖 ----
+        self.priority_combo = QComboBox()
+        for priority in TaskPriority:
+            self.priority_combo.addItem(priority.label, int(priority))
+        form.addRow("优先级", self.priority_combo)
+
+        self.tags_edit = QLineEdit()
+        self.tags_edit.setPlaceholderText("用逗号或空格分隔，例如：工作, 本周")
+        form.addRow("标签", self.tags_edit)
+
+        self.parent_combo = QComboBox()
+        form.addRow("父任务", self.parent_combo)
+
+        self.dependency_list = QListWidget()
+        self.dependency_list.setMaximumHeight(110)
+        form.addRow("前置依赖", self.dependency_list)
+
         layout.addLayout(form)
 
         hint = QLabel(
-            "单次任务必须设置截止日期；每周/每月任务需要参考日期以确定在哪一天显示。"
+            "单次任务必须设置截止日期；每周/每月任务需要参考日期以确定在哪一天显示。\n"
+            "勾选「前置依赖」后，这些任务未完成时当前任务的勾选框会置灰。"
         )
         hint.setObjectName("hint")
         hint.setWordWrap(True)
@@ -136,6 +160,7 @@ class TaskDialog(QDialog):
 
         if task is None:
             self._sync_remind_enabled(False)
+            self._populate_v11(None)
             return
 
         self.title_edit.setText(task.title)
@@ -150,6 +175,90 @@ class TaskDialog(QDialog):
             )
         else:
             self._sync_remind_enabled(False)
+        self._populate_v11(task)
+
+    # ------------------------------------------------------------------
+    # v1.1 P2：优先级 / 标签 / 父任务 / 前置依赖
+    # ------------------------------------------------------------------
+    def _populate_v11(self, task: TaskItem | None) -> None:
+        """填充 P2 新增的四个字段。
+
+        「父任务」与「前置依赖」的候选来自 ``service.list_all()``：
+        排除自己（不能当自己的父任务或前置），前置依赖另外排除
+        已软删除的任务。
+        """
+        priority = task.priority if task is not None else TaskPriority.NORMAL
+        index = self.priority_combo.findData(int(priority))
+        if index >= 0:
+            self.priority_combo.setCurrentIndex(index)
+
+        self.parent_combo.clear()
+        self.parent_combo.addItem("（无，作为顶层任务）", None)
+        self.dependency_list.clear()
+
+        if self._service is None:
+            # 没有服务时只留「无父任务」，标签/依赖字段不可用
+            self.tags_edit.setEnabled(False)
+            self.parent_combo.setEnabled(False)
+            self.dependency_list.setEnabled(False)
+            return
+
+        tags = (
+            self._service.tags_for(task.id) if task is not None and task.id else []
+        )
+        self.tags_edit.setText(", ".join(tags))
+
+        candidates = [t for t in self._service.list_all() if t.id is not None]
+        if task is not None and task.id is not None:
+            candidates = [t for t in candidates if t.id != task.id]
+
+        for candidate in candidates:
+            self.parent_combo.addItem(candidate.title, candidate.id)
+        if task is not None and task.parent_task_id is not None:
+            found = self.parent_combo.findData(task.parent_task_id)
+            if found >= 0:
+                self.parent_combo.setCurrentIndex(found)
+
+        selected = (
+            set(self._service.dependencies_of(task.id))
+            if task is not None and task.id
+            else set()
+        )
+        for candidate in candidates:
+            item = QListWidgetItem(candidate.title)
+            item.setData(Qt.UserRole, candidate.id)
+            item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
+            item.setCheckState(Qt.Checked if candidate.id in selected else Qt.Unchecked)
+            self.dependency_list.addItem(item)
+
+    def selected_priority(self) -> TaskPriority:
+        """当前选中的优先级。"""
+        return TaskPriority.from_value(self.priority_combo.currentData())
+
+    def selected_tags(self) -> list[str]:
+        """解析标签输入框（逗号、顿号、空格都当分隔符，去重保序）。"""
+        raw = self.tags_edit.text().replace("、", ",").replace("，", ",")
+        for separator in (" ", "\t"):
+            raw = raw.replace(separator, ",")
+        tags: list[str] = []
+        for piece in raw.split(","):
+            name = piece.strip()
+            if name and name not in tags:
+                tags.append(name)
+        return tags
+
+    def selected_parent_id(self) -> int | None:
+        """选中的父任务 id；顶层任务为 ``None``。"""
+        return self.parent_combo.currentData()
+
+    def selected_dependencies(self) -> list[int]:
+        """勾选的前置依赖 id 列表。"""
+        chosen: list[int] = []
+        for row in range(self.dependency_list.count()):
+            item = self.dependency_list.item(row)
+            if item.checkState() == Qt.Checked:
+                chosen.append(int(item.data(Qt.UserRole)))
+        return chosen
 
     def _sync_remind_enabled(self, enabled: bool) -> None:
         self.remind_time_edit.setEnabled(enabled)
@@ -189,6 +298,9 @@ class TaskDialog(QDialog):
             "type": self.selected_type(),
             "due_date": self.selected_due_date(),
             "remind_time": self.selected_remind_time(),
+            # v1.1 P2
+            "priority": self.selected_priority(),
+            "parent_task_id": self.selected_parent_id(),
         }
         if base is None:
             return TaskItem(**values)

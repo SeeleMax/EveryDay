@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from everyday.models.task import TaskItem
+from everyday.models.task import TaskItem, TaskPriority
 from everyday.ui import styles
 
 #: 字体点数兜底值。某些环境下应用字体没有显式点数（Qt 返回 -1），
@@ -31,6 +31,13 @@ _FALLBACK_POINT_SIZE = 10
 
 #: 已完成任务的整行不透明度（1.0 = 完全不透明）
 COMPLETED_OPACITY = 0.45
+
+#: 优先级徽标的样式（普通优先级不显示徽标，因此不在表里）
+_PRIORITY_STYLES = {
+    TaskPriority.URGENT: "color: #d93025; font-weight: 600;",
+    TaskPriority.HIGH: "color: #e8710a; font-weight: 600;",
+    TaskPriority.LOW: "color: #9aa0a6;",
+}
 
 
 def strikeout_font(base: QFont, strike: bool) -> QFont:
@@ -89,10 +96,29 @@ class TaskRow(QWidget):
         self.checkbox.toggled.connect(self._on_toggled)
         layout.addWidget(self.checkbox)
 
+        # v1.1 P2：优先级徽标（普通优先级不显示，避免整列表都是徽标）
+        self.priority_label = QLabel()
+        self.priority_label.setObjectName("priorityBadge")
+        layout.addWidget(self.priority_label)
+
         self.title_label = QLabel(task.title)
         self.title_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self.title_label.setToolTip(self._tooltip_text(task, day))
         layout.addWidget(self.title_label, 1)
+
+        # v1.1 P2：标签 chip 与子任务进度
+        self.tag_label = QLabel()
+        self.tag_label.setObjectName("tagChip")
+        layout.addWidget(self.tag_label)
+
+        self.child_label = QLabel()
+        self.child_label.setObjectName("hint")
+        layout.addWidget(self.child_label)
+
+        # v1.1 P2：被前置依赖阻塞时的提示
+        self.blocked_label = QLabel()
+        self.blocked_label.setObjectName("blockedHint")
+        layout.addWidget(self.blocked_label)
 
         if task.remind_time is not None:
             time_label = QLabel(task.remind_time.strftime("%H:%M"))
@@ -122,7 +148,7 @@ class TaskRow(QWidget):
         return self._task.id
 
     def apply_state(self, task: TaskItem, day: date) -> None:
-        """按任务当前状态刷新视觉（删除线、超期警示、完成项半透明）。"""
+        """按任务当前状态刷新视觉（删除线、超期警示、完成项半透明、v1.1 徽标）。"""
         self._task = task
         self.title_label.setFont(strikeout_font(self.title_label.font(), task.is_completed))
 
@@ -136,12 +162,43 @@ class TaskRow(QWidget):
         # 完成后整行淡出，配合「沉到列表最下面」表达「已处理，无需再看」
         self._opacity_effect.setOpacity(COMPLETED_OPACITY if task.is_completed else 1.0)
 
+        self._refresh_v11_badges(task)
         self.title_label.setToolTip(self._tooltip_text(task, day))
 
         # 程序化回写勾选状态时不要触发业务回调
         self._syncing = True
         self.checkbox.setChecked(task.is_completed)
         self._syncing = False
+
+    def _refresh_v11_badges(self, task: TaskItem) -> None:
+        """刷新 v1.1 新增的四个展示元素（优先级 / 标签 / 子任务 / 阻塞）。"""
+        style = _PRIORITY_STYLES.get(task.priority)
+        if style is None:
+            self.priority_label.hide()
+        else:
+            self.priority_label.setText(task.priority.label)
+            self.priority_label.setStyleSheet(style)
+            self.priority_label.show()
+
+        if task.tags:
+            self.tag_label.setText(" ".join(f"#{tag}" for tag in task.tags))
+            self.tag_label.show()
+        else:
+            self.tag_label.hide()
+
+        if task.has_children:
+            self.child_label.setText(f"子任务 {task.child_progress_label}")
+            self.child_label.show()
+        else:
+            self.child_label.hide()
+
+        if task.is_blocked:
+            self.blocked_label.setText("待前置")
+            self.blocked_label.show()
+            self.set_completion_enabled(False, "前置任务未完成，暂不可勾选")
+        else:
+            self.blocked_label.hide()
+            self.set_completion_enabled(True)
 
     def set_completion_enabled(self, enabled: bool, reason: str = "") -> None:
         """控制勾选框可用性（v1.1 的前置任务未完成置灰会用到）。"""
@@ -151,12 +208,20 @@ class TaskRow(QWidget):
     @staticmethod
     def _tooltip_text(task: TaskItem, day: date) -> str:
         parts = [f"类型：{task.type.label}"]
+        if task.priority is not TaskPriority.NORMAL:
+            parts.append(f"优先级：{task.priority.label}")
         if task.due_date is not None:
             parts.append(f"日期:{task.due_date.isoformat()}")
         if task.is_overdue_on(day):
             parts.append("状态：已超期")
         elif task.is_completed:
             parts.append("状态：已完成")
+        if task.tags:
+            parts.append("标签：" + "、".join(task.tags))
+        if task.has_children:
+            parts.append(f"子任务：{task.child_progress_label} 已完成")
+        if task.is_blocked:
+            parts.append(f"阻塞：{len(task.blocked_by)} 个前置任务未完成")
         if task.description:
             parts.append(f"描述：{task.description}")
         return "\n".join(parts)
