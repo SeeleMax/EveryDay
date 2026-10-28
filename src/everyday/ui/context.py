@@ -96,9 +96,14 @@ class AppContext(QObject):
         """今天的日期。"""
         return timeutils.today_local()
 
-    def today_tasks(self) -> list:
-        """今日任务列表（会顺带执行循环状态校对）。"""
-        return self.task_service.refresh(self.today())
+    def today_tasks(self, tag: str | None = None) -> list:
+        """今日任务列表（会顺带执行循环状态校对）。
+
+        :param tag: 只返回带该标签的任务（v1.1 P2 标签筛选）。
+        """
+        day = self.today()
+        self.task_service.rollover_if_needed(day)
+        return self.task_service.list_today(day, tag=tag)
 
     def progress(self) -> TaskProgress:
         """今日完成进度。"""

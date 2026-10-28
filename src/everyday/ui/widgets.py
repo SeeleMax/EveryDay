@@ -66,6 +66,7 @@ class TaskRow(QWidget):
     completion_changed = Signal(int, bool)
     edit_requested = Signal(int)
     delete_requested = Signal(int)
+    expand_requested = Signal(int)
 
     def __init__(
         self,
@@ -73,11 +74,13 @@ class TaskRow(QWidget):
         day: date,
         *,
         compact: bool = False,
+        expanded: bool = False,
         parent: QWidget | None = None,
     ) -> None:
         super().__init__(parent)
         self._task = task
         self._compact = compact
+        self._expanded = expanded
         self._syncing = False
         # 已完成的任务整行半透明。
         # 效果器**只创建一次并常驻**：Qt 在 setGraphicsEffect(None) 时会
@@ -126,6 +129,15 @@ class TaskRow(QWidget):
             layout.addWidget(time_label)
 
         if not compact:
+            # v1.1 P2：有子任务时提供折叠/展开按钮（紧凑模式不显示）
+            self.expand_button = QPushButton()
+            self.expand_button.setFlat(True)
+            self.expand_button.setFixedWidth(36)
+            self.expand_button.clicked.connect(
+                lambda: self.expand_requested.emit(self._task.id)
+            )
+            layout.addWidget(self.expand_button)
+
             self.edit_button = QPushButton("编辑")
             self.edit_button.setFixedWidth(56)
             self.edit_button.clicked.connect(lambda: self.edit_requested.emit(self._task.id))
@@ -191,6 +203,18 @@ class TaskRow(QWidget):
             self.child_label.show()
         else:
             self.child_label.hide()
+
+        # 折叠/展开按钮只在「有子任务且非紧凑模式」时出现
+        expand_button = getattr(self, "expand_button", None)
+        if expand_button is not None:
+            if task.has_children:
+                expand_button.setText("▾" if self._expanded else "▸")
+                expand_button.setToolTip(
+                    "收起子任务" if self._expanded else "展开子任务"
+                )
+                expand_button.show()
+            else:
+                expand_button.hide()
 
         if task.is_blocked:
             self.blocked_label.setText("待前置")

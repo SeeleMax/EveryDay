@@ -12,6 +12,7 @@ from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAction, QCloseEvent
 from PySide6.QtWidgets import (
     QApplication,
+    QComboBox,
     QLabel,
     QListWidget,
     QListWidgetItem,
@@ -49,6 +50,10 @@ class MainWindow(QMainWindow):
         self._context = context
         #: 由 :meth:`attach_tray` 注入，关闭时用于气泡提示
         self._tray = None
+        #: v1.1 P2：当前标签筛选（``None`` = 不筛选）
+        self._tag_filter: str | None = None
+        #: v1.1 P2：已展开子任务的父任务 id
+        self._expanded: set[int] = set()
 
         self.setWindowTitle(f"{APP_DISPLAY_NAME} v{__version__}")
         self.setWindowIcon(icons.app_icon())
@@ -89,6 +94,17 @@ class MainWindow(QMainWindow):
         self.settings_action = QAction("设置", self)
         self.settings_action.triggered.connect(self.open_settings)
         toolbar.addAction(self.settings_action)
+
+        toolbar.addSeparator()
+
+        # v1.1 P2：标签筛选
+        toolbar.addWidget(QLabel(" 标签 "))
+        self.tag_filter_combo = QComboBox()
+        self.tag_filter_combo.setMinimumWidth(120)
+        self.tag_filter_combo.setToolTip("按标签筛选今日任务")
+        self.tag_filter_combo.currentIndexChanged.connect(self._on_tag_filter_changed)
+        toolbar.addWidget(self.tag_filter_combo)
+        self._reload_tag_filter()
 
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
@@ -171,30 +187,110 @@ class MainWindow(QMainWindow):
         self.refresh_calendar()
 
     def refresh_tasks(self) -> None:
-        """重建任务列表。"""
+        """重建任务列表（v1.1 P2：支持标签筛选与子任务折叠）。"""
         day = self._context.today()
-        tasks = self._context.today_tasks()
+        tasks = self._context.today_tasks(tag=self._tag_filter)
         progress = self._context.progress()
 
+        # 子任务折叠：默认收起，只展示有子任务的那些父任务的「进度」
+        visible_tasks = self._apply_collapse(tasks)
+
+        self._reload_tag_filter()
+
         self.task_list.clear()
-        if not tasks:
-            placeholder = QListWidgetItem("今天还没有任务，点击工具栏「新建任务」开始吧")
+        if not visible_tasks:
+            message = (
+                "没有带该标签的任务，换个标签试试"
+                if self._tag_filter
+                else "今天还没有任务，点击工具栏「新建任务」开始吧"
+            )
+            placeholder = QListWidgetItem(message)
             placeholder.setFlags(Qt.NoItemFlags)
             self.task_list.addItem(placeholder)
         else:
-            for task in tasks:
+            for task in visible_tasks:
                 self._append_task_row(task, day)
 
         self.task_title.setText(f"今日任务（{progress.label}）")
         self._apply_progress(progress)
-        self.statusBar().showMessage(f"共 {len(tasks)} 项今日任务", 4000)
+        hidden = len(tasks) - len(visible_tasks)
+        suffix = f"，收起 {hidden} 个子任务" if hidden else ""
+        self.statusBar().showMessage(f"共 {len(tasks)} 项今日任务{suffix}", 4000)
+
+    def _apply_collapse(self, tasks: list[TaskItem]) -> list[TaskItem]:
+        """把「父任务未展开」的子任务从展示列表里过滤掉。
+
+        只做一层折叠：子任务的子任务跟随最顶层祖先的展开状态，
+        避免多层嵌套时出现「展开了父任务但孙任务混乱」的情况。
+        """
+        top_parent: dict[int, int | None] = {
+            t.id: t.parent_task_id for t in tasks if t.id is not None
+        }
+
+        def root_of(task: TaskItem) -> int | None:
+            """沿父链找到最顶层的可见祖先。"""
+            seen: set[int] = set()
+            current = task.parent_task_id
+            while current is not None and current in top_parent and current not in seen:
+                seen.add(current)
+                parent = top_parent[current]
+                if parent is None:
+                    return current
+                current = parent
+            return current
+
+        visible: list[TaskItem] = []
+        for task in tasks:
+            root = root_of(task)
+            if root is None or root in self._expanded:
+                visible.append(task)
+        return visible
+
+    def _reload_tag_filter(self) -> None:
+        """重建标签下拉框，尽量保持当前选择。"""
+        if not hasattr(self, "tag_filter_combo"):
+            return
+        tags = self._context.task_service.all_tags()
+        self.tag_filter_combo.blockSignals(True)
+        self.tag_filter_combo.clear()
+        self.tag_filter_combo.addItem("全部标签", None)
+        for tag in tags:
+            self.tag_filter_combo.addItem(f"#{tag}", tag)
+        if self._tag_filter is not None:
+            index = self.tag_filter_combo.findData(self._tag_filter)
+            if index >= 0:
+                self.tag_filter_combo.setCurrentIndex(index)
+            else:
+                # 当前标签已经没有任务了，回到「全部」
+                self._tag_filter = None
+                self.tag_filter_combo.setCurrentIndex(0)
+        self.tag_filter_combo.blockSignals(False)
+
+    def _on_tag_filter_changed(self) -> None:
+        """切换标签筛选。"""
+        self._tag_filter = self.tag_filter_combo.currentData()
+        self.refresh_tasks()
+
+    def _on_expand_toggled(self, task_id: int) -> None:
+        """展开 / 收起某个任务的子任务。"""
+        if task_id in self._expanded:
+            self._expanded.discard(task_id)
+        else:
+            self._expanded.add(task_id)
+        self.refresh_tasks()
 
     def _append_task_row(self, task: TaskItem, day) -> None:
         item = QListWidgetItem()
-        row = TaskRow(task, day, parent=self.task_list)
+        row = TaskRow(
+            task,
+            day,
+            expanded=task.id in self._expanded if task.id is not None else False,
+            parent=self.task_list,
+        )
         row.completion_changed.connect(self.on_completion_changed)
         row.edit_requested.connect(self.edit_task)
         row.delete_requested.connect(self.delete_task)
+        row.expand_requested.connect(self._on_expand_toggled)
         item.setSizeHint(row.sizeHint())
         self.task_list.addItem(item)
         self.task_list.setItemWidget(item, row)
