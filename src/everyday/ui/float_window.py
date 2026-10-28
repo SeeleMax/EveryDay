@@ -24,8 +24,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from everyday.services.pomodoro_service import PomodoroState
 from everyday.ui import icons, styles
 from everyday.ui.context import AppContext
+from everyday.ui.progress_ring import ProgressRing
 from everyday.ui.widgets import TaskRow
 
 logger = logging.getLogger(__name__)
@@ -86,6 +88,11 @@ class FloatWindow(QWidget):
         self.progress_label.setObjectName("floatProgress")
         header.addWidget(self.progress_label)
 
+        # v1.1 P3：番茄钟进度环（没有进行中的专注时隐藏）
+        self.pomodoro_ring = ProgressRing()
+        self.pomodoro_ring.hide()
+        header.addWidget(self.pomodoro_ring)
+
         self.close_button = QPushButton("✕")
         self.close_button.setObjectName("floatClose")
         self.close_button.setFixedSize(20, 20)
@@ -122,6 +129,22 @@ class FloatWindow(QWidget):
     # ==================================================================
     # 刷新
     # ==================================================================
+    def set_pomodoro(self, snapshot) -> None:
+        """更新番茄钟进度环（v1.1 P3）。
+
+        ``snapshot`` 为 ``None`` 或处于空闲/结束时隐藏圆环——
+        悬浮窗本来就窄，不该常驻一个空环。
+        """
+        if snapshot is None or not (snapshot.is_active or snapshot.state is PomodoroState.BREAK):
+            self.pomodoro_ring.hide()
+            return
+        self.pomodoro_ring.set_progress(
+            snapshot.ratio,
+            snapshot.remaining_label,
+            paused=snapshot.state is PomodoroState.PAUSED,
+        )
+        self.pomodoro_ring.show()
+
     def refresh_all(self) -> None:
         """刷新日期、任务与日程。"""
         day = self._context.today()

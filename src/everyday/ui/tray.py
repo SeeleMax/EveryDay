@@ -13,6 +13,7 @@ from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QMenu, QSystemTrayIcon, QWidget
 
 from everyday import APP_DISPLAY_NAME
+from everyday.services.pomodoro_service import PomodoroState
 from everyday.ui import icons
 from everyday.ui.context import AppContext
 
@@ -26,6 +27,11 @@ class TrayIcon(QSystemTrayIcon):
     float_toggle_requested = Signal(bool)
     autostart_toggle_requested = Signal(bool)
     quit_requested = Signal()
+    # v1.1 P3：番茄钟命令
+    pomodoro_start_requested = Signal()
+    pomodoro_pause_requested = Signal()
+    pomodoro_resume_requested = Signal()
+    pomodoro_stop_requested = Signal()
 
     def __init__(self, context: AppContext, parent: QWidget | None = None) -> None:
         super().__init__(icons.app_icon(), parent)
@@ -55,6 +61,29 @@ class TrayIcon(QSystemTrayIcon):
 
         menu.addSeparator()
 
+        # ---- v1.1 P3：番茄钟 ----
+        self.pomodoro_status_action = QAction("番茄钟：空闲", menu)
+        self.pomodoro_status_action.setEnabled(False)
+        menu.addAction(self.pomodoro_status_action)
+
+        self.pomodoro_start_action = QAction("开始专注", menu)
+        self.pomodoro_start_action.triggered.connect(self.pomodoro_start_requested.emit)
+        menu.addAction(self.pomodoro_start_action)
+
+        self.pomodoro_pause_action = QAction("暂停专注", menu)
+        self.pomodoro_pause_action.triggered.connect(self.pomodoro_pause_requested.emit)
+        menu.addAction(self.pomodoro_pause_action)
+
+        self.pomodoro_resume_action = QAction("继续专注", menu)
+        self.pomodoro_resume_action.triggered.connect(self.pomodoro_resume_requested.emit)
+        menu.addAction(self.pomodoro_resume_action)
+
+        self.pomodoro_stop_action = QAction("结束专注", menu)
+        self.pomodoro_stop_action.triggered.connect(self.pomodoro_stop_requested.emit)
+        menu.addAction(self.pomodoro_stop_action)
+
+        menu.addSeparator()
+
         self.quit_action = QAction("退出应用", menu)
         self.quit_action.triggered.connect(self.quit_requested.emit)
         menu.addAction(self.quit_action)
@@ -63,6 +92,7 @@ class TrayIcon(QSystemTrayIcon):
         self.activated.connect(self._on_activated)
         self._context.settings_changed.connect(self._sync_from_settings)
         self._context.float_visibility_changed.connect(self.sync_float_visible)
+        self.sync_pomodoro(None)
 
     # ------------------------------------------------------------------
     def _on_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
@@ -94,3 +124,37 @@ class TrayIcon(QSystemTrayIcon):
         """弹出气泡提示（关闭主窗口时给予反馈）。"""
         if self.supportsMessages():
             self.showMessage(title, message, icons.app_icon(), 3000)
+
+    # ------------------------------------------------------------------
+    # v1.1 P3：番茄钟菜单同步
+    # ------------------------------------------------------------------
+    def sync_pomodoro(self, snapshot) -> None:
+        """按番茄钟快照刷新菜单文案与可点状态。
+
+        ``snapshot`` 为 ``None`` 表示没有番茄钟服务（菜单整体禁用）。
+        """
+        if snapshot is None:
+            self.pomodoro_status_action.setText("番茄钟：不可用")
+            for action in (
+                self.pomodoro_start_action,
+                self.pomodoro_pause_action,
+                self.pomodoro_resume_action,
+                self.pomodoro_stop_action,
+            ):
+                action.setEnabled(False)
+            return
+
+        state = snapshot.state
+        if snapshot.is_active:
+            text = f"番茄钟：{state.label}，剩余 {snapshot.remaining_label}"
+        else:
+            text = f"番茄钟：{state.label}"
+        self.pomodoro_status_action.setText(text)
+
+        focusing = state is PomodoroState.FOCUSING
+        paused = state is PomodoroState.PAUSED
+        finished = state is PomodoroState.FINISHED
+        self.pomodoro_start_action.setEnabled(not (focusing or paused or finished))
+        self.pomodoro_pause_action.setEnabled(focusing)
+        self.pomodoro_resume_action.setEnabled(paused)
+        self.pomodoro_stop_action.setEnabled(focusing or paused)

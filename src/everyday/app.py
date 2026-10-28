@@ -17,7 +17,9 @@ from everyday import APP_NAME, __version__, exceptions, paths
 from everyday.db import Database, MigrationRunner
 from everyday.db.repositories import (
     DependencyRepository,
+    FocusRepository,
     PresetRepository,
+    ReminderRepository,
     SettingsRepository,
     TagRepository,
     TaskRepository,
@@ -26,7 +28,9 @@ from everyday.logging_setup import setup_logging
 from everyday.services.backup_service import BackupService
 from everyday.services.calendar_service import CalendarService
 from everyday.services.dependency_service import DependencyService
+from everyday.services.pomodoro_service import PomodoroService
 from everyday.services.preset_service import PresetService
+from everyday.services.reminder_service import ReminderScheduler
 from everyday.services.settings_service import SettingsService
 from everyday.services.startup_service import StartupService
 from everyday.services.task_service import TaskService
@@ -35,6 +39,18 @@ logger = logging.getLogger(__name__)
 
 #: 跨午夜检查间隔（文档 5.5：每小时检查一次系统日期）
 DATE_CHECK_INTERVAL_MS = 60 * 60 * 1000
+
+#: v1.1 P3：提醒扫描间隔。提醒粒度是分钟（``remind_time`` 精确到分），
+#: 扫得更密只会白白唤醒 CPU。
+REMINDER_SCAN_INTERVAL_MS = 60 * 1000
+
+
+def _raw_int(repository, key: str, default: int) -> int:
+    """从 app_settings 读一个整数配置，缺失或非法时用默认值。"""
+    try:
+        return int(repository.get_raw(key, default))
+    except (TypeError, ValueError):
+        return default
 
 
 @dataclass
@@ -90,6 +106,14 @@ class Application:
         self._date_timer = None
         self._calendar_timer = None
         self._current_day = None
+        # ---- v1.1 P3:番茄钟与提醒 ----
+        # 控制器与通知端口来自 ui 层（控制器依赖 Qt），故**不加类型注解**：
+        # 模块级导入它们会破坏「没有 Qt 也能 import everyday.app」的约束。
+        self._pomodoro_service: PomodoroService | None = None
+        self._pomodoro_controller = None
+        self._reminder_scheduler: ReminderScheduler | None = None
+        self._reminder_timer = None
+        self._notifier = None
 
     # ==================================================================
     def run(self) -> int:
@@ -147,6 +171,15 @@ class Application:
             settings = self._settings_service.save(
                 settings.merged(auto_start=actual_autostart)
             )
+
+        # 4.5) v1.1 P3：番茄钟服务。
+        # 时长从 app_settings 键值表读，缺键时用默认值——
+        # 这正是当初选键值存储的收益：新增配置项不需要迁移。
+        self._pomodoro_service = PomodoroService(
+            FocusRepository(self._database),
+            default_minutes=_raw_int(settings_repo, "pomodoro_minutes", 25),
+            break_minutes=_raw_int(settings_repo, "pomodoro_break_minutes", 5),
+        )
 
         # 5) 界面
         from everyday.ui.context import AppContext
@@ -269,6 +302,35 @@ class Application:
 
         self._context.tasks_changed.connect(self._update_tray_progress)
 
+        # ---- v1.1 P3：番茄钟与提醒调度 ----
+        # 这些类在 run() 里是懒导入的，本方法是另一个作用域，必须自己导入一次
+        from everyday.ui.notifier import TrayNotifier
+        from everyday.ui.pomodoro_controller import PomodoroController
+
+        # 通知端口与调度器必须在托盘建好之后创建（端口要包着托盘）
+        self._notifier = TrayNotifier(self._tray)
+        if self._pomodoro_service is None:  # pragma: no cover - 正常路径已创建
+            self._pomodoro_service = PomodoroService(FocusRepository(self._database))
+        self._reminder_scheduler = ReminderScheduler(
+            self._context.task_service,
+            ReminderRepository(self._database),
+            self._notifier,
+            pomodoro=self._pomodoro_service,
+        )
+        self._pomodoro_controller = PomodoroController(
+            self._pomodoro_service,
+            tray=self._tray,
+            float_window=self._float_window,
+            notifier=self._notifier,
+            # 注意 parent 必须是 QObject：Application 是普通类，传进来会 TypeError。
+            # 引用保存在 self 上，不会被 GC 回收。
+            parent=None,
+        )
+        self._tray.pomodoro_start_requested.connect(self._pomodoro_controller.start)
+        self._tray.pomodoro_pause_requested.connect(self._pomodoro_controller.pause)
+        self._tray.pomodoro_resume_requested.connect(self._pomodoro_controller.resume)
+        self._tray.pomodoro_stop_requested.connect(self._pomodoro_controller.stop)
+
     def _start_timers(self) -> None:
         """启动跨午夜检查与日历自动刷新定时器。"""
         from PySide6.QtCore import QTimer
@@ -286,6 +348,26 @@ class Application:
         )
         self._calendar_timer.timeout.connect(self._refresh_calendar)
         self._calendar_timer.start()
+
+        # v1.1 P3：提醒调度器每分钟扫一次。
+        # 频率取 1 分钟是因为提醒的粒度就是分钟（remind_time 精确到分），
+        # 扫得更密只会白白唤醒 CPU。
+        self._reminder_timer = QTimer()
+        self._reminder_timer.setInterval(REMINDER_SCAN_INTERVAL_MS)
+        self._reminder_timer.timeout.connect(self._scan_reminders)
+        self._reminder_timer.start()
+
+    def _scan_reminders(self) -> None:
+        """扫描一次待提醒任务（失败不能影响主循环）。"""
+        if self._reminder_scheduler is None:
+            return
+        try:
+            notified = self._reminder_scheduler.tick()
+        except Exception:
+            logger.exception("提醒扫描失败，本轮跳过")
+            return
+        if notified:
+            logger.info("本次提醒了 %d 个任务：%s", len(notified), notified)
 
     # ==================================================================
     def _check_date_change(self) -> None:
@@ -373,6 +455,12 @@ class Application:
                 self._date_timer.stop()
             if self._calendar_timer is not None:
                 self._calendar_timer.stop()
+            # v1.1 P3：必须停掉番茄钟与提醒定时器，否则窗口销毁后
+            # 定时器仍可能被触发，访问已释放控件直接崩溃
+            if self._reminder_timer is not None:
+                self._reminder_timer.stop()
+            if self._pomodoro_controller is not None:
+                self._pomodoro_controller.shutdown()
         finally:
             if self._database is not None:
                 self._database.close()
