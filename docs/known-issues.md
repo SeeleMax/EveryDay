@@ -265,6 +265,21 @@ Windows 托盘区可能短暂残留一个死图标，鼠标划过即消失。正
 仅有一个迁移脚本。迁移执行器已支持多脚本、数值排序、幂等、校验和告警，
 为 v1.1 准备好了。
 
+> **v1.1 更新**：已新增迁移 `002`（priority / parent_task_id / deleted_at
+> 与六张新表），当前版本为 `002`。本条目保留为历史记录。
+
+### KI-18 通知走托盘气泡，不进 Windows 通知中心
+
+v1.1 P3 的通知实现选择 `QSystemTrayIcon.showMessage`（托盘气泡）。
+
+| 项目 | 说明 |
+|---|---|
+| 做不到的 | 不进入 Windows 通知中心（关掉气泡就找不回来了）、气泡上不能放「完成 / 稍后提醒」按钮 |
+| 换来的 | 零额外依赖、随 PySide6 一起打包、Windows 10/11 行为稳定；不需要 WinRT 元数据或 ctypes 拼 `Shell_NotifyIcon` 结构 |
+| 影响 | 「稍后提醒」目前只能由代码或未来界面触发，用户点不了气泡上的按钮 |
+| 升级路径 | 另写一个实现 `NotificationPort` 的类替换 `TrayNotifier` 即可，服务层与调度逻辑不用改 |
+| 相关文件 | `src/everyday/ui/notifier.py`、`src/everyday/services/notification.py` |
+
 ### KI-14 应用退出时不会写「最后使用时间」之类的统计
 
 V1 没有统计需求，因此没有埋点表。v1.1 的历史统计需要新增表与写入逻辑。
